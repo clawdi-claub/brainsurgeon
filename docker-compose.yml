@@ -3,7 +3,7 @@ services:
     build: .
     container_name: brainsurgeon
     ports:
-      - "8654:8654"
+      - "127.0.0.1:8654:8654"
     volumes:
       - ~/.openclaw/data:/data:ro
       - ~/.openclaw/data/sessions.json:/data/sessions.json:rw
@@ -15,10 +15,12 @@ services:
     image: nginx:alpine
     container_name: brainsurgeon-nginx
     ports:
-      - "8080:80"
+      - "80:80"
+      - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./web:/usr/share/nginx/html:ro
+      - ~/.local/certbot/config/live/brain.lpc.one:/etc/nginx/certs:ro
     depends_on:
       - brainsurgeon
     restart: unless-stopped
