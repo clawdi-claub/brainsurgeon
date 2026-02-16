@@ -1,0 +1,33 @@
+name: brainsurgeon
+description: Web UI for surgical session management - browse, view, edit, prune, and delete OpenClaw sessions
+version: 1.0.0
+author: crix-claub
+
+# Extension type
+extension_type: web_service
+
+# Web service configuration
+web:
+  # Static files to serve
+  static_path: ./web
+  # API server to proxy
+  api_port: 8654
+  api_path: /api
+
+# Entry points
+entry_points:
+  # Web UI accessible at /brainsurgeon
+  web: /brainsurgeon
+
+# Permissions required
+permissions:
+  - read_sessions
+  - write_sessions
+  - delete_sessions
+
+# Dependencies
+dependencies:
+  python_packages:
+    - fastapi
+    - uvicorn
+    - pydantic

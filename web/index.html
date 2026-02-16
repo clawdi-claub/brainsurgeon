@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BrainSurgeon 🧠</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-header">
+        <div class="app-title">🧠 BrainSurgeon</div>
+        <div class="agent-filter" id="agentFilter">
+            <button class="agent-btn active" data-agent="all">All</button>
+        </div>
+    </div>
+
+    <div class="stats-bar">
+        <div class="stat">Sessions: <span class="stat-value" id="statCount">0</span></div>
+        <div class="stat">Total Size: <span class="stat-value" id="statSize">0 MB</span></div>
+        <div class="stat">Total Messages: <span class="stat-value" id="statMessages">0</span></div>
+        <div class="stat">Tool Calls: <span class="stat-value" id="statTools">0</span></div>
+    </div>
+
+    <div class="main-container">
+        <div class="session-grid" id="sessionGrid">
+            <div class="loading">Loading sessions...</div>
+        </div>
+    </div>
+
+    <!-- View Modal -->
+    <div class="modal-overlay" id="viewModal">
+        <div class="modal">
+            <div class="modal-head">
+                <div>
+                    <div id="modalTitle">Session</div>
+                    <div class="session-id" id="modalId"></div>
+                </div>
+                <button class="close-x" onclick="closeModal()">×</button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <div class="loading">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
