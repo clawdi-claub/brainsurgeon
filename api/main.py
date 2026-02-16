@@ -2,7 +2,6 @@
 
 import json
 import os
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -11,9 +10,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# Configuration
-OPENCLAW_DATA = Path(os.environ.get("OPENCLAW_DATA", "~/.openclaw/data")).expanduser()
-SESSIONS_JSON = OPENCLAW_DATA / "sessions.json"
+# Configuration - OpenClaw agents directory
+OPENCLAW_ROOT = Path(os.environ.get("OPENCLAW_ROOT", "~/.openclaw")).expanduser()
+AGENTS_DIR = OPENCLAW_ROOT / "agents"
 
 app = FastAPI(title="BrainSurgeon", version="1.0.0")
 
@@ -57,7 +56,7 @@ class SessionDetail(BaseModel):
 
 
 class PruneRequest(BaseModel):
-    keep_recent: int = 3  # Keep last N tool calls
+    keep_recent: int = 3
 
 
 class EditEntryRequest(BaseModel):
@@ -65,17 +64,30 @@ class EditEntryRequest(BaseModel):
     entry: dict
 
 
-def parse_sessions_json():
-    """Load sessions.json and return sessions dict."""
-    if not SESSIONS_JSON.exists():
-        return {"agents": {}}
-    with open(SESSIONS_JSON, "r") as f:
-        return json.load(f)
+def get_agents() -> list[str]:
+    """Get list of agent directories."""
+    if not AGENTS_DIR.exists():
+        return []
+    return [d.name for d in AGENTS_DIR.iterdir() if d.is_dir()]
 
 
-def get_session_path(agent: str, session_id: str) -> Path:
-    """Get the full path to a session file."""
-    return OPENCLAW_DATA / agent / f"{session_id}.jsonl"
+def get_agent_sessions(agent: str) -> list[dict]:
+    """Get sessions for a specific agent from sessions.json."""
+    sessions_file = AGENTS_DIR / agent / "sessions" / "sessions.json"
+    if not sessions_file.exists():
+        return []
+    try:
+        with open(sessions_file, "r") as f:
+            data = json.load(f)
+        # Convert dict to list of sessions with IDs
+        sessions = []
+        for key, value in data.items():
+            session = dict(value)
+            session["_key"] = key
+            sessions.append(session)
+        return sessions
+    except (json.JSONDecodeError, IOError):
+        return []
 
 
 def analyze_jsonl(filepath: Path) -> dict:
@@ -97,15 +109,33 @@ def analyze_jsonl(filepath: Path) -> dict:
             try:
                 entry = json.loads(line)
                 entries.append(entry)
-                if entry.get("role") in ("user", "assistant"):
-                    messages += 1
-                if entry.get("role") == "tool":
+                
+                # Handle OpenClaw session format
+                entry_type = entry.get("type", "")
+                
+                if entry_type == "message":
+                    msg = entry.get("message", {})
+                    role = msg.get("role", "")
+                    if role in ("user", "assistant"):
+                        messages += 1
+                    if role == "toolResult":
+                        tool_outputs += 1
+                    # Count tool calls in message content array
+                    content = msg.get("content", [])
+                    if isinstance(content, list):
+                        for item in content:
+                            if isinstance(item, dict) and item.get("type") == "toolCall":
+                                tool_calls += 1
+                    # Also check for tool_calls field
+                    if msg.get("tool_calls"):
+                        tool_calls += len(msg["tool_calls"])
+                elif entry_type == "tool_call":
+                    tool_calls += 1
+                elif entry_type == "tool_result":
                     tool_outputs += 1
-                if entry.get("tool_calls"):
-                    tool_calls += len(entry["tool_calls"])
-                elif entry.get("name") and entry.get("role") == "tool":
-                    # Tool result without explicit tool_calls
-                    pass
+                elif entry_type == "tool":
+                    tool_outputs += 1
+                    
             except json.JSONDecodeError:
                 continue
 
@@ -127,14 +157,15 @@ def get_session_timestamps(filepath: Path) -> tuple[Optional[str], Optional[str]
     with open(filepath, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
-            if not line:
-                continue
-            try:
-                entry = json.loads(line)
-                if entry.get("timestamp"):
-                    entries.append(entry["timestamp"])
-            except:
-                continue
+            if line:
+                try:
+                    entry = json.loads(line)
+                    # Handle OpenClaw format - timestamp can be in different places
+                    ts = entry.get("timestamp")
+                    if ts:
+                        entries.append(ts)
+                except:
+                    continue
 
     if not entries:
         return None, None, None
@@ -153,31 +184,32 @@ def get_session_timestamps(filepath: Path) -> tuple[Optional[str], Optional[str]
 @app.get("/agents")
 def list_agents():
     """List all agents with sessions."""
-    data = parse_sessions_json()
-    return {"agents": list(data.get("agents", {}).keys())}
+    return {"agents": get_agents()}
 
 
 @app.get("/sessions", response_model=SessionList)
 def list_sessions(agent: Optional[str] = None):
     """List sessions, optionally filtered by agent."""
-    data = parse_sessions_json()
     sessions = []
     total_size = 0
 
-    agents_to_check = [agent] if agent else list(data.get("agents", {}).keys())
+    agents_to_check = [agent] if agent else get_agents()
 
     for ag in agents_to_check:
-        agent_data = data.get("agents", {}).get(ag, {})
-        for sess_id, sess_info in agent_data.get("sessions", {}).items():
-            path = get_session_path(ag, sess_id)
-            analysis = analyze_jsonl(path)
-            created, updated, duration = get_session_timestamps(path)
+        agent_sessions = get_agent_sessions(ag)
+        for sess in agent_sessions:
+            session_id = sess.get("sessionId", "unknown")
+            sessions_dir = AGENTS_DIR / ag / "sessions"
+            filepath = sessions_dir / f"{session_id}.jsonl"
+            
+            analysis = analyze_jsonl(filepath)
+            created, updated, duration = get_session_timestamps(filepath)
 
             sessions.append(SessionInfo(
-                id=sess_id,
+                id=session_id,
                 agent=ag,
-                label=sess_info.get("label", sess_id),
-                path=str(path),
+                label=sess.get("label", session_id[:8]),
+                path=str(filepath),
                 size=analysis["size"],
                 messages=analysis["messages"],
                 tool_calls=analysis["tool_calls"],
@@ -190,7 +222,7 @@ def list_sessions(agent: Optional[str] = None):
 
     return SessionList(
         sessions=sorted(sessions, key=lambda s: s.updated or "", reverse=True),
-        agents=list(data.get("agents", {}).keys()),
+        agents=get_agents(),
         total_size=total_size,
     )
 
@@ -198,26 +230,29 @@ def list_sessions(agent: Optional[str] = None):
 @app.get("/sessions/{agent}/{session_id}", response_model=SessionDetail)
 def get_session(agent: str, session_id: str):
     """Get full session details."""
-    path = get_session_path(agent, session_id)
-    if not path.exists():
+    filepath = AGENTS_DIR / agent / "sessions" / f"{session_id}.jsonl"
+    if not filepath.exists():
         raise HTTPException(status_code=404, detail="Session not found")
 
-    data = parse_sessions_json()
-    agent_data = data.get("agents", {}).get(agent, {})
-    sess_info = agent_data.get("sessions", {}).get(session_id, {})
+    agent_sessions = get_agent_sessions(agent)
+    label = session_id
+    for sess in agent_sessions:
+        if sess.get("sessionId") == session_id:
+            label = sess.get("label", session_id)
+            break
 
-    analysis = analyze_jsonl(path)
+    analysis = analyze_jsonl(filepath)
 
     raw_content = ""
-    if path.exists():
-        with open(path, "r", encoding="utf-8") as f:
+    if filepath.exists():
+        with open(filepath, "r", encoding="utf-8") as f:
             raw_content = f.read()
 
     return SessionDetail(
         id=session_id,
         agent=agent,
-        label=sess_info.get("label", session_id),
-        path=str(path),
+        label=label,
+        path=str(filepath),
         size=analysis["size"],
         raw_content=raw_content,
         entries=analysis["entries"],
@@ -227,18 +262,26 @@ def get_session(agent: str, session_id: str):
 @app.delete("/sessions/{agent}/{session_id}")
 def delete_session(agent: str, session_id: str):
     """Delete session file and sessions.json entry."""
-    path = get_session_path(agent, session_id)
+    filepath = AGENTS_DIR / agent / "sessions" / f"{session_id}.jsonl"
+    sessions_file = AGENTS_DIR / agent / "sessions" / "sessions.json"
 
     # Remove file
-    if path.exists():
-        path.unlink()
+    if filepath.exists():
+        filepath.unlink()
 
     # Update sessions.json
-    data = parse_sessions_json()
-    if agent in data.get("agents", {}):
-        data["agents"][agent].get("sessions", {}).pop(session_id, None)
-        with open(SESSIONS_JSON, "w") as f:
-            json.dump(data, f, indent=2)
+    if sessions_file.exists():
+        try:
+            with open(sessions_file, "r") as f:
+                data = json.load(f)
+            # Find and remove entry by sessionId
+            keys_to_remove = [k for k, v in data.items() if v.get("sessionId") == session_id]
+            for key in keys_to_remove:
+                del data[key]
+            with open(sessions_file, "w") as f:
+                json.dump(data, f, indent=2)
+        except (json.JSONDecodeError, IOError):
+            pass
 
     return {"deleted": True, "id": session_id}
 
@@ -246,13 +289,13 @@ def delete_session(agent: str, session_id: str):
 @app.post("/sessions/{agent}/{session_id}/prune")
 def prune_session(agent: str, session_id: str, req: PruneRequest):
     """Prune tool call output, keeping only recent calls."""
-    path = get_session_path(agent, session_id)
-    if not path.exists():
+    filepath = AGENTS_DIR / agent / "sessions" / f"{session_id}.jsonl"
+    if not filepath.exists():
         raise HTTPException(status_code=404, detail="Session not found")
 
     # Read all entries
     entries = []
-    with open(path, "r", encoding="utf-8") as f:
+    with open(filepath, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
@@ -267,7 +310,7 @@ def prune_session(agent: str, session_id: str, req: PruneRequest):
     # Keep only recent tool calls
     to_prune = tool_indices[:-req.keep_recent] if len(tool_indices) > req.keep_recent else []
 
-    original_size = path.stat().st_size
+    original_size = filepath.stat().st_size
     pruned_count = 0
 
     for idx in to_prune:
@@ -277,14 +320,13 @@ def prune_session(agent: str, session_id: str, req: PruneRequest):
             entry["content"] = f"[pruned {old_len} chars]"
             entry["_pruned"] = True
             pruned_count += 1
-        # Keep tool_call_id for pairing
 
     # Write back
-    with open(path, "w", encoding="utf-8") as f:
+    with open(filepath, "w", encoding="utf-8") as f:
         for entry in entries:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-    new_size = path.stat().st_size
+    new_size = filepath.stat().st_size
 
     return {
         "pruned": True,
@@ -298,13 +340,13 @@ def prune_session(agent: str, session_id: str, req: PruneRequest):
 @app.put("/sessions/{agent}/{session_id}/entries/{index}")
 def edit_entry(agent: str, session_id: str, index: int, req: EditEntryRequest):
     """Edit a specific session entry."""
-    path = get_session_path(agent, session_id)
-    if not path.exists():
+    filepath = AGENTS_DIR / agent / "sessions" / f"{session_id}.jsonl"
+    if not filepath.exists():
         raise HTTPException(status_code=404, detail="Session not found")
 
     # Read all entries
     entries = []
-    with open(path, "r", encoding="utf-8") as f:
+    with open(filepath, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
@@ -320,7 +362,7 @@ def edit_entry(agent: str, session_id: str, index: int, req: EditEntryRequest):
     entries[index] = req.entry
 
     # Write back
-    with open(path, "w", encoding="utf-8") as f:
+    with open(filepath, "w", encoding="utf-8") as f:
         for entry in entries:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
