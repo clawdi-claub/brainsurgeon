@@ -694,16 +694,12 @@ function renderSessionBody(data) {
     window._currentEntries = data.entries;
     currentSessionData = data;
 
-    console.log('renderSessionBody called, entries count:', data.entries.length);
-
     // Group tool calls with results (on ORIGINAL entries in chronological order)
     let groupedEntries = groupToolCalls(data.entries);
-    console.log('After groupToolCalls, groups count:', groupedEntries.length);
     
     // Apply type filter to groups
     if (currentEntryTypeFilter !== 'all') {
         groupedEntries = groupedEntries.filter(filterGroupByType);
-        console.log('After filtering, groups count:', groupedEntries.length);
     }
     
     // Sort groups (newest first or oldest first)
@@ -711,23 +707,24 @@ function renderSessionBody(data) {
         groupedEntries = [...groupedEntries].reverse();
     }
     
-    // Check for parent/child relationships (using original indices)
-    const childEntryIds = new Set();
-    const parentToChildren = {};
-    
+    // Build entry ID to index map for parent/child linking
+    const entryIdToIndex = {};
     data.entries.forEach((entry, idx) => {
-        if (entry.parentId) {
-            childEntryIds.add(idx);
-            if (!parentToChildren[entry.parentId]) parentToChildren[entry.parentId] = [];
-            parentToChildren[entry.parentId].push({ entry, index: idx, entryId: entry.id || entry.sessionId });
+        if (entry.id) {
+            entryIdToIndex[entry.id] = idx;
         }
     });
-    console.log('Child entry IDs:', Array.from(childEntryIds));
-    console.log('Parent to children map:', Object.keys(parentToChildren));
     
-    let renderedCount = 0;
+    // Find which entries are children of other entries (for visual indentation)
+    // Note: We don't skip them - we just indent them visually under their parent
+    const entryParentIndices = {};
+    data.entries.forEach((entry, idx) => {
+        if (entry.parentId && entryIdToIndex[entry.parentId] !== undefined) {
+            entryParentIndices[idx] = entryIdToIndex[entry.parentId];
+        }
+    });
     
-    const html = groupedEntries.map((group) => {
+    document.getElementById('modalBody2').innerHTML = groupedEntries.map((group) => {
         let entryIndex, entry;
         
         if (group.type === 'tool_pair') {
@@ -738,51 +735,26 @@ function renderSessionBody(data) {
             entry = group.entry;
         }
         
-        // Skip if this is a child entry that will be rendered under its parent
-        if (childEntryIds.has(entryIndex)) {
-            console.log('Skipping child entry at index', entryIndex);
-            return '';
-        }
+        // Check if this entry should be indented (has a parent entry)
+        const parentIndex = entryParentIndices[entryIndex];
+        const indentLevel = parentIndex !== undefined ? 1 : 0;
         
-        renderedCount++;
-        
-        // Mark children of this entry as rendered
-        const entryId = entry.id || entry.sessionId || entry.call_id;
-        const children = parentToChildren[entryId] || [];
+        const indentStyle = indentLevel > 0 ? 'margin-left: 24px; border-left: 2px dashed var(--accent-purple); padding-left: 12px;' : '';
         
         if (group.type === 'tool_pair') {
             // Tool call + result pair grouped together
             return `
-            <div class="entry-group tool-pair-group">
+            <div class="entry-group tool-pair-group" style="${indentStyle}">
                 <div class="group-label">🔧 → 📥</div>
                 ${renderEntryWithToggle(group.call, group.callIndex, data.agent, data.id)}
                 ${renderEntryWithToggle(group.result, group.resultIndex, data.agent, data.id)}
             </div>
             `;
         } else {
-            if (children.length > 0) {
-                // Show parent with children indented below
-                return `
-                <div class="entry-group parent-group">
-                    <div class="parent-entry">
-                        ${renderEntryWithToggle(group.entry, entryIndex, data.agent, data.id)}
-                    </div>
-                    <div class="children-container">
-                        ${children.map((child) => {
-                            return `<div class="child-entry">${renderEntryWithToggle(child.entry, child.index, data.agent, data.id)}</div>`;
-                        }).join('')}
-                    </div>
-                </div>
-                `;
-            }
-            
-            // Regular entry with toggle
-            return renderEntryWithToggle(group.entry, entryIndex, data.agent, data.id);
+            // Regular entry with optional indentation
+            return `<div style="${indentStyle}">${renderEntryWithToggle(group.entry, entryIndex, data.agent, data.id)}</div>`;
         }
     }).join('');
-    
-    console.log('Rendered count:', renderedCount);
-    document.getElementById('modalBody2').innerHTML = html;
 }
 
 function renderEntryWithToggle(entry, index, agent, sessionId) {
