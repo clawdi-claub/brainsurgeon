@@ -936,9 +936,6 @@ async function viewSession(agent, id) {
         window._currentEntries = data.entries;
 
         // Update metadata section
-        console.log('Session data received:', data);
-        console.log('Channel:', data.channel, 'Tokens:', data.tokens, 'Skills:', data.resolvedSkills);
-        
         document.getElementById('metaSessionId').textContent = data.id;
         const channelEl = document.getElementById('metaChannel');
         if (channelEl) channelEl.textContent = data.channel || '—';
