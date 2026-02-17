@@ -519,13 +519,19 @@ def get_session(agent: str, session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
 
     agent_sessions = get_agent_sessions(agent)
+    print(f"DEBUG: Found {len(agent_sessions)} sessions for agent {agent}")
     label = session_id
     session_meta = None
     for sess in agent_sessions:
-        if sess.get("sessionId") == session_id:
+        sid = sess.get("sessionId")
+        print(f"DEBUG: Checking session {sid}")
+        if sid == session_id:
             label = sess.get("label", session_id)
             session_meta = sess
+            print(f"DEBUG: Found matching session! Meta keys: {sess.keys()}")
             break
+    if not session_meta:
+        print(f"DEBUG: No session_meta found for {session_id}")
 
     analysis = analyze_jsonl(filepath)
 
@@ -599,6 +605,8 @@ def get_session(agent: str, session_id: str):
     context_tokens = session_meta.get("contextTokens") if session_meta else None
     input_tokens = session_meta.get("inputTokens") if session_meta else None
     output_tokens = session_meta.get("outputTokens") if session_meta else None
+    
+    print(f"DEBUG: Extracted metadata - channel={channel}, tokens={tokens}, skills_count={len(resolved_skills)}")
     
     return SessionDetail(
         id=session_id,
