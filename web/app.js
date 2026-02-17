@@ -149,9 +149,16 @@ function renderSessions() {
         const staleBadge = isStale ? '<span class="stale-badge">STALE</span>' : '';
         const modelBadge = s.model ? `<span class="session-model">${escapeHtml(s.model)}</span>` : '';
         
+        // Flow indication: parent>child relationships
+        const parentBadge = s.parentId ? '<span class="flow-badge" title="Child of another session">↩️</span>' : '';
+        const childCount = s.children?.length || 0;
+        const childBadge = childCount > 0 ? `<span class="flow-badge" title="${childCount} child session(s)">↪️ ${childCount}</span>` : '';
+        const flowBadges = parentBadge || childBadge ? `<div class="session-flow">${parentBadge}${childBadge}</div>` : '';
+        
         return `
         <div class="session-card ${isStale ? 'stale' : ''}" onclick="viewSession('${s.agent}', '${s.id}')">
             ${staleBadge}
+            ${flowBadges}
             <div class="session-header">
                 <div>
                     <div class="session-id">${s.id}</div>
@@ -272,8 +279,9 @@ async function showDeleteDialog(agent, id, label) {
     let summaryHtml = '';
     if (summaryData && summaryData.summary) {
         const s = summaryData.summary;
-        const hasContent = s.key_actions?.length > 0 || s.topics?.length > 0 || 
-                          s.tools_used?.length > 0 || s.models_used?.length > 0;
+        const hasContent = s.key_actions?.length > 0 || s.user_requests?.length > 0 || 
+                          s.thinking_insights?.length > 0 || s.tools_used?.length > 0 || 
+                          s.models_used?.length > 0;
         
         if (hasContent) {
             summaryHtml = `
@@ -284,12 +292,14 @@ async function showDeleteDialog(agent, id, label) {
                     padding: 16px;
                     margin: 12px 0;
                     font-size: 0.9rem;
+                    max-height: 400px;
+                    overflow-y: auto;
                 ">
                     <h4 style="margin: 0 0 12px 0; color: var(--accent-cyan);">📋 Session Summary</h4>
                     
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px;">
                         <div style="text-align: center; padding: 8px; background: var(--bg-tertiary); border-radius: 4px;">
-                            <div style="font-size: 1.2rem; font-weight: 600;">${s.message_count || 0}</div>
+                            <div style="font-size: 1.2rem; font-weight: 600;">${s.meaningful_messages || s.message_count || 0}</div>
                             <div style="font-size: 0.75rem; color: var(--text-secondary);">Messages</div>
                         </div>
                         <div style="text-align: center; padding: 8px; background: var(--bg-tertiary); border-radius: 4px;">
@@ -302,6 +312,15 @@ async function showDeleteDialog(agent, id, label) {
                         </div>
                     </div>
                     
+                    ${s.user_requests?.length ? `
+                        <div style="margin-bottom: 10px;">
+                            <strong style="color: var(--accent-blue);">💬 User Requests:</strong>
+                            <ul style="margin: 4px 0; padding-left: 16px; color: var(--text-secondary);">
+                                ${s.user_requests.map(a => `<li>${escapeHtml(a)}</li>`).join('')}
+                            </ul>
+                        </div>
+                    ` : ''}
+                    
                     ${s.key_actions?.length ? `
                         <div style="margin-bottom: 10px;">
                             <strong style="color: var(--accent-green);">✓ Key Actions:</strong>
@@ -311,18 +330,18 @@ async function showDeleteDialog(agent, id, label) {
                         </div>
                     ` : ''}
                     
-                    ${s.topics?.length ? `
+                    ${s.thinking_insights?.length ? `
                         <div style="margin-bottom: 10px;">
-                            <strong style="color: var(--accent-yellow);">💡 Topics:</strong>
-                            <div style="margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px;">
-                                ${s.topics.slice(0, 3).map(t => `<span style="background: var(--bg-tertiary); padding: 2px 8px; border-radius: 12px; font-size: 0.8rem;">${escapeHtml(t.substring(0, 50))}</span>`).join('')}
-                            </div>
+                            <strong style="color: var(--accent-purple);">🧠 Insights:</strong>
+                            <ul style="margin: 4px 0; padding-left: 16px; color: var(--text-secondary);">
+                                ${s.thinking_insights.map(t => `<li>${escapeHtml(t)}</li>`).join('')}
+                            </ul>
                         </div>
                     ` : ''}
                     
                     ${s.tools_used?.length ? `
                         <div style="margin-bottom: 10px;">
-                            <strong style="color: var(--accent-purple);">🔧 Tools:</strong>
+                            <strong style="color: var(--accent-yellow);">🔧 Tools:</strong>
                             <span style="color: var(--text-secondary); font-size: 0.85rem;">${s.tools_used.slice(0, 5).join(', ')}${s.tools_used.length > 5 ? ' +' + (s.tools_used.length - 5) + ' more' : ''}</span>
                         </div>
                     ` : ''}
@@ -347,6 +366,8 @@ async function showDeleteDialog(agent, id, label) {
                     ${s.files_created?.length ? `<div style="color: var(--accent-cyan); font-size: 0.85rem;">📝 Files: ${s.files_created.slice(0, 3).join(', ')}</div>` : ''}
                 </div>
             `;
+        } else {
+            summaryHtml = `<p style="color: var(--text-secondary);">No meaningful content found (session may contain mostly automated/heartbeat messages).</p>`;
         }
     }
     
@@ -376,6 +397,102 @@ async function confirmDelete(agent, id) {
     }
 }
 
+// View mode state
+let currentViewMode = 'normal';
+let currentSessionData = null;
+
+function setViewMode(mode) {
+    currentViewMode = mode;
+    document.getElementById('btnNormalView').classList.toggle('active', mode === 'normal');
+    document.getElementById('btnRawView').classList.toggle('active', mode === 'raw');
+    
+    if (currentSessionData) {
+        renderSessionBody(currentSessionData);
+    }
+}
+
+function toggleMetadata() {
+    const content = document.getElementById('metadataContent');
+    const toggle = document.querySelector('.metadata-toggle');
+    const isExpanded = content.style.display !== 'none';
+    content.style.display = isExpanded ? 'none' : 'block';
+    toggle.classList.toggle('expanded', !isExpanded);
+}
+
+function formatJsonHtml(obj, indent = 0) {
+    const spaces = '  '.repeat(indent);
+    if (obj === null) return '<span class="json-null">null</span>';
+    if (typeof obj === 'boolean') return `<span class="json-boolean">${obj}</span>`;
+    if (typeof obj === 'number') return `<span class="json-number">${obj}</span>`;
+    if (typeof obj === 'string') return `<span class="json-string">"${escapeHtml(obj)}"</span>`;
+    
+    if (Array.isArray(obj)) {
+        if (obj.length === 0) return '[]';
+        const items = obj.map(item => spaces + '  ' + formatJsonHtml(item, indent + 1)).join(',\n');
+        return `[\n${items}\n${spaces}]`;
+    }
+    
+    if (typeof obj === 'object') {
+        const keys = Object.keys(obj);
+        if (keys.length === 0) return '{}';
+        const items = keys.map(key => {
+            const val = formatJsonHtml(obj[key], indent + 1);
+            return `${spaces}  <span class="json-key">"${escapeHtml(key)}"</span>: ${val}`;
+        }).join(',\n');
+        return `{\n${items}\n${spaces}}`;
+    }
+    
+    return String(obj);
+}
+
+function renderSessionBody(data) {
+    if (currentViewMode === 'raw') {
+        // Raw JSON view
+        document.getElementById('modalBody2').innerHTML = `<pre class="raw-json-view">${formatJsonHtml(data)}</pre>`;
+    } else {
+        // Normal view - grouped entries
+        const groupedEntries = groupToolCalls(data.entries);
+        document.getElementById('modalBody2').innerHTML = groupedEntries.map((group, idx) => {
+            if (group.type === 'tool_pair') {
+                return `
+                <div class="entry-group">
+                    <div class="entry entry-tool-call">
+                        <div class="entry-header">
+                            <span class="entry-type">🔧 Tool Call #${idx + 1}</span>
+                            <span>${group.call.timestamp || ''}</span>
+                        </div>
+                        <div class="entry-content">${formatEntryContent(group.call)}</div>
+                        <div class="entry-actions" onclick="event.stopPropagation()">
+                            <button class="btn btn-small" onclick="editEntry('${data.agent}', '${data.id}', ${group.callIndex})">Edit</button>
+                        </div>
+                    </div>
+                    <div class="entry entry-tool-result">
+                        <div class="entry-header">
+                            <span class="entry-type">📥 Result</span>
+                        </div>
+                        <div class="entry-content">${formatEntryContent(group.result)}</div>
+                    </div>
+                </div>
+                `;
+            } else {
+                return `
+                <div class="entry ${group.entry._pruned ? 'pruned' : ''}">
+                    <div class="entry-header">
+                        <span class="entry-type">${getEntryTypeLabel(group.entry)}</span>
+                        <span>${group.entry.timestamp || ''}</span>
+                    </div>
+                    <div class="entry-content">${formatEntryContent(group.entry)}</div>
+                    <div class="entry-actions" onclick="event.stopPropagation()">
+                        <button class="btn btn-small" onclick="editEntry('${data.agent}', '${data.id}', ${group.index})">Edit</button>
+                        <button class="btn btn-small btn-danger" onclick="deleteEntry('${data.agent}', '${data.id}', ${group.index})">Delete</button>
+                    </div>
+                </div>
+                `;
+            }
+        }).join('');
+    }
+}
+
 // View session - DEFAULT to view now
 async function viewSession(agent, id) {
     document.getElementById('viewModal').classList.add('active');
@@ -387,6 +504,7 @@ async function viewSession(agent, id) {
     try {
         const r = await fetch(`${API}/sessions/${agent}/${id}`);
         const data = await r.json();
+        currentSessionData = data;
 
         // Update header
         document.getElementById('modalTitle2').textContent = data.label || id;
@@ -454,51 +572,18 @@ async function viewSession(agent, id) {
         // Store entries for editing
         window._currentEntries = data.entries;
 
-        // Group tool calls with results
-        const groupedEntries = groupToolCalls(data.entries);
-        
-        document.getElementById('modalBody2').innerHTML = groupedEntries.map((group, idx) => {
-            if (group.type === 'tool_pair') {
-                // Tool call + result pair
-                const call = group.call;
-                const result = group.result;
-                return `
-                <div class="entry-group">
-                    <div class="entry entry-tool-call">
-                        <div class="entry-header">
-                            <span class="entry-type">🔧 Tool Call #${idx + 1}</span>
-                            <span>${call.timestamp || ''}</span>
-                        </div>
-                        <div class="entry-content">${formatEntryContent(call)}</div>
-                        <div class="entry-actions" onclick="event.stopPropagation()">
-                            <button class="btn btn-small" onclick="editEntry('${agent}', '${id}', ${group.callIndex})">Edit</button>
-                        </div>
-                    </div>
-                    <div class="entry entry-tool-result">
-                        <div class="entry-header">
-                            <span class="entry-type">📥 Result</span>
-                        </div>
-                        <div class="entry-content">${formatEntryContent(result)}</div>
-                    </div>
-                </div>
-                `;
-            } else {
-                // Regular entry
-                return `
-                <div class="entry ${group.entry._pruned ? 'pruned' : ''}">
-                    <div class="entry-header">
-                        <span class="entry-type">${getEntryTypeLabel(group.entry)}</span>
-                        <span>${group.entry.timestamp || ''}</span>
-                    </div>
-                    <div class="entry-content">${formatEntryContent(group.entry)}</div>
-                    <div class="entry-actions" onclick="event.stopPropagation()">
-                        <button class="btn btn-small" onclick="editEntry('${agent}', '${id}', ${group.index})">Edit</button>
-                        <button class="btn btn-small btn-danger" onclick="deleteEntry('${agent}', '${id}', ${group.index})">Delete</button>
-                    </div>
-                </div>
-                `;
-            }
-        }).join('');
+        // Update metadata section
+        document.getElementById('metaSessionId').textContent = data.id;
+        document.getElementById('metaChannel').textContent = data.channel || '—';
+        document.getElementById('metaStarted').textContent = data.created ? new Date(data.created).toLocaleString() : '—';
+        document.getElementById('metaLastInteraction').textContent = data.updated ? new Date(data.updated).toLocaleString() : '—';
+        document.getElementById('metaTokens').textContent = data.tokens || '—';
+        document.getElementById('metaSkills').textContent = data.resolvedSkills?.join(', ') || '—';
+        document.getElementById('metaSystemPrompt').textContent = data.systemPromptReport || '—';
+        document.getElementById('metaHistory').textContent = data.history ? JSON.stringify(data.history) : '—';
+
+        // Render body based on current view mode
+        renderSessionBody(data);
     } catch (e) {
         document.getElementById('modalBody2').innerHTML = '<div class="empty">Failed to load session</div>';
     }

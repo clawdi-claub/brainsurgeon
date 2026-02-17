@@ -271,19 +271,47 @@ def list_sessions(agent: Optional[str] = None):
     )
 
 
+def is_heartbeat_message(text: str) -> bool:
+    """Check if message is a heartbeat check or automated system message."""
+    if not text:
+        return True
+    heartbeat_indicators = [
+        "heartbeat",
+        "HEARTBEAT_OK",
+        "checking token",
+        "context compacted",
+        "compacted (",
+        "tokens:",
+        "token count",
+        "system: [",
+        "[system]",
+        "you've been rate limited",
+        "rate limit",
+        "compacting context",
+        "continue on your open tasks",
+    ]
+    text_lower = text.lower()
+    return any(ind in text_lower for ind in heartbeat_indicators)
+
 def generate_session_summary(entries: list[dict]) -> dict:
-    """Generate an intelligent summary of a session before deletion."""
+    """Generate an intelligent summary of a session before deletion.
+    
+    Excludes heartbeat checks and automated system messages.
+    Focuses on user interaction, thinking, and meaningful content.
+    """
     summary = {
         "session_type": "chat",
         "topics": [],
         "tools_used": set(),
         "models_used": set(),
         "key_actions": [],
+        "user_requests": [],
+        "thinking_insights": [],
         "errors": [],
         "duration_estimate": None,
         "message_count": 0,
-        "assistant_messages": 0,
         "user_messages": 0,
+        "meaningful_messages": 0,
         "tool_calls": 0,
         "has_git_commits": False,
         "files_created": set(),
@@ -292,7 +320,7 @@ def generate_session_summary(entries: list[dict]) -> dict:
     
     first_timestamp = None
     last_timestamp = None
-    topic_keywords = []
+    seen_topics = set()
     
     for entry in entries:
         entry_type = entry.get("type", "")
@@ -304,7 +332,7 @@ def generate_session_summary(entries: list[dict]) -> dict:
                 first_timestamp = ts
             last_timestamp = ts
         
-        # Track custom types
+        # Skip heartbeat and automated entries
         if entry_type == "custom":
             custom_type = entry.get("customType", "")
             if custom_type == "model-snapshot":
@@ -312,8 +340,9 @@ def generate_session_summary(entries: list[dict]) -> dict:
                 model_id = data.get("modelId")
                 if model_id:
                     summary["models_used"].add(model_id)
+            continue
         
-        # Track message entries
+        # Track message entries - but filter out heartbeats
         if entry_type == "message":
             summary["message_count"] += 1
             msg = entry.get("message", {})
@@ -321,62 +350,89 @@ def generate_session_summary(entries: list[dict]) -> dict:
             content = msg.get("content", "")
             
             if role == "assistant":
-                summary["assistant_messages"] += 1
                 # Check for tool calls
                 if msg.get("tool_calls"):
                     summary["tool_calls"] += len(msg.get("tool_calls", []))
-                    # Extract tool names
                     for tc in msg.get("tool_calls", []):
                         tool_name = tc.get("name") or tc.get("function", {}).get("name")
                         if tool_name:
                             summary["tools_used"].add(tool_name)
                 
-                # Extract topics from content
+                # Extract thinking insights (high value content)
                 if isinstance(content, list):
+                    has_meaningful_content = False
                     for item in content:
-                        if item.get("type") == "text":
-                            text = item.get("text", "")
-                            # Look for task indicators
-                            if any(kw in text.lower() for kw in ["implement", "build", "create", "fix", "add", "update"]):
-                                # Extract first sentence as action
-                                first_sentence = text.split('.')[0][:100]
-                                if len(first_sentence) > 20:
-                                    summary["key_actions"].append(first_sentence)
-                        elif item.get("type") == "thinking":
+                        if item.get("type") == "thinking":
                             thinking = item.get("thinking", "")
-                            # Extract topics from thinking
-                            if len(thinking) > 50:
-                                # Look for keywords indicating work
-                                for kw in ["task", "feature", "implement", "build", "create", "fix"]:
-                                    if kw in thinking.lower():
-                                        topic = thinking[:150].strip()
-                                        if topic not in topic_keywords:
-                                            topic_keywords.append(topic)
-                                        break
+                            # Skip heartbeat-related thinking
+                            if is_heartbeat_message(thinking):
+                                continue
+                            if len(thinking) > 30:
+                                has_meaningful_content = True
+                                # Extract key insights from thinking
+                                lines = [l.strip() for l in thinking.split('\n') if l.strip()]
+                                for line in lines[:3]:  # First 3 non-empty lines
+                                    if len(line) > 20 and len(line) < 200:
+                                        if line not in seen_topics:
+                                            seen_topics.add(line)
+                                            summary["thinking_insights"].append(line)
+                        
+                        elif item.get("type") == "text":
+                            text = item.get("text", "")
+                            if is_heartbeat_message(text):
+                                continue
+                            has_meaningful_content = True
+                            
+                            # Look for task/action indicators
+                            action_keywords = ["implement", "build", "create", "fix", "add", "update", 
+                                            "deploy", "configure", "refactor", "integrate", "optimize"]
+                            if any(kw in text.lower() for kw in action_keywords):
+                                # Extract first sentence as action
+                                first_sentence = text.split('.')[0][:120]
+                                if len(first_sentence) > 20:
+                                    if first_sentence not in seen_topics:
+                                        seen_topics.add(first_sentence)
+                                        summary["key_actions"].append(first_sentence)
+                
+                if has_meaningful_content:
+                    summary["meaningful_messages"] += 1
                 
                 # Check for errors
                 if msg.get("errorMessage") or msg.get("stopReason") == "error":
                     error_msg = msg.get("errorMessage", "Unknown error")
-                    summary["errors"].append(error_msg[:200])
+                    if not is_heartbeat_message(error_msg):
+                        summary["errors"].append(error_msg[:200])
             
             elif role == "user":
                 summary["user_messages"] += 1
-                # Extract user's intent
+                # Extract user's actual requests (not system prompts)
                 if isinstance(content, list):
                     for item in content:
                         if item.get("type") == "text":
                             text = item.get("text", "")
+                            if is_heartbeat_message(text):
+                                continue
+                            
+                            summary["meaningful_messages"] += 1
+                            
+                            # Capture user requests (first sentence)
+                            if len(text) > 10 and len(text) < 300:
+                                first_sentence = text.split('.')[0][:150]
+                                if first_sentence not in seen_topics:
+                                    seen_topics.add(first_sentence)
+                                    summary["user_requests"].append(first_sentence)
+                            
                             # Check for file operations
-                            if any(kw in text.lower() for kw in ["create", "write", "edit", "modify"]):
-                                # Simple file detection
+                            file_keywords = ["create", "write", "edit", "modify", "fix", "build"]
+                            if any(kw in text.lower() for kw in file_keywords):
                                 words = text.split()
                                 for word in words:
                                     if '.' in word and '/' in word:
-                                        if any(ext in word for ext in ['.py', '.js', '.ts', '.html', '.css', '.json', '.md', '.yml', '.yaml']):
-                                            summary["files_created"].add(word.strip('.,;:!?'))
+                                        if any(ext in word for ext in ['.py', '.js', '.ts', '.html', '.css', '.json', '.md', '.yml', '.yaml', '.sh', '.txt']):
+                                            summary["files_created"].add(word.strip('.,;:!?()[]{}'))
                             
         # Track tool results for git/file operations
-        if entry_type == "tool_result":
+        elif entry_type == "tool_result":
             content = entry.get("content", "")
             if isinstance(content, list):
                 for item in content:
@@ -388,29 +444,32 @@ def generate_session_summary(entries: list[dict]) -> dict:
     # Calculate duration
     if first_timestamp and last_timestamp:
         try:
-            from dateutil.parser import isoparse
-            start = isoparse(first_timestamp.replace('Z', '+00:00'))
-            end = isoparse(last_timestamp.replace('Z', '+00:00'))
+            from datetime import datetime, timezone
+            start = datetime.fromisoformat(first_timestamp.replace('Z', '+00:00'))
+            end = datetime.fromisoformat(last_timestamp.replace('Z', '+00:00'))
             duration_mins = (end - start).total_seconds() / 60
             summary["duration_estimate"] = round(duration_mins, 1)
         except:
             pass
     
     # Convert sets to lists for JSON
-    summary["tools_used"] = sorted(list(summary["tools_used"]))[:20]  # Top 20 tools
+    summary["tools_used"] = sorted(list(summary["tools_used"]))[:15]
     summary["models_used"] = sorted(list(summary["models_used"]))
-    summary["files_created"] = sorted(list(summary["files_created"]))[:10]
-    summary["files_modified"] = sorted(list(summary["files_modified"]))[:10]
-    summary["topics"] = topic_keywords[:5]  # Top 5 topics
-    summary["key_actions"] = summary["key_actions"][:5]  # Top 5 actions
-    summary["errors"] = summary["errors"][:5]  # Top 5 errors
+    summary["files_created"] = sorted(list(summary["files_created"]))[:8]
+    summary["files_modified"] = sorted(list(summary["files_modified"]))[:8]
+    
+    # Limit arrays
+    summary["thinking_insights"] = summary["thinking_insights"][:5]
+    summary["user_requests"] = summary["user_requests"][:5]
+    summary["key_actions"] = summary["key_actions"][:5]
+    summary["errors"] = summary["errors"][:3]
     
     # Determine session type
     if summary["has_git_commits"]:
         summary["session_type"] = "development"
     elif summary["tool_calls"] > 5:
         summary["session_type"] = "tool_heavy"
-    elif summary["message_count"] > 50:
+    elif summary["meaningful_messages"] > 30:
         summary["session_type"] = "long_chat"
     
     return summary

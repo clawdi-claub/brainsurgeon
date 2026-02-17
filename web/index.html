@@ -73,6 +73,50 @@
 
             <!-- Session Details Panel -->
             <div class="session-details-panel" id="sessionDetailsPanel">
+                <!-- Metadata from sessions.json - Collapsible -->
+                <div class="metadata-section">
+                    <div class="metadata-header" onclick="toggleMetadata()">
+                        <span class="metadata-toggle">▶</span>
+                        <span>Session Metadata (from sessions.json)</span>
+                    </div>
+                    <div class="metadata-content" id="metadataContent" style="display: none;">
+                        <div class="details-grid metadata-grid">
+                            <div class="detail-item">
+                                <span class="detail-label">Session ID</span>
+                                <span class="detail-value" id="metaSessionId">—</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Channel</span>
+                                <span class="detail-value" id="metaChannel">—</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Started</span>
+                                <span class="detail-value" id="metaStarted">—</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Last Interaction</span>
+                                <span class="detail-value" id="metaLastInteraction">—</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Tokens</span>
+                                <span class="detail-value" id="metaTokens">—</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Resolved Skills</span>
+                                <span class="detail-value" id="metaSkills">—</span>
+                            </div>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">System Prompt Report:</span>
+                            <span class="detail-value" id="metaSystemPrompt">—</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">History:</span>
+                            <span class="detail-value" id="metaHistory">—</span>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="details-grid">
                     <div class="detail-item">
                         <span class="detail-label">Agent</span>
@@ -118,6 +162,14 @@
                 <div class="detail-row" id="detailChildrenRow" style="display: none;">
                     <span class="detail-label">Children:</span>
                     <span class="detail-value" id="detailChildren">—</span>
+                </div>
+            </div>
+
+            <!-- View Toggle and Body -->
+            <div class="view-controls">
+                <div class="view-toggle">
+                    <button class="toggle-btn active" id="btnNormalView" onclick="setViewMode('normal')">Normal</button>
+                    <button class="toggle-btn" id="btnRawView" onclick="setViewMode('raw')">Raw JSON</button>
                 </div>
             </div>
 

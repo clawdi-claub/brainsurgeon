@@ -159,6 +159,22 @@ body {
     font-weight: 600;
 }
 
+.session-card .flow-badge {
+    font-size: 0.75rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--accent-purple);
+    color: #fff;
+    font-weight: 500;
+    margin-right: 4px;
+}
+
+.session-card .session-flow {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+}
+
 .session-header {
     display: flex;
     justify-content: space-between;
@@ -535,4 +551,116 @@ body {
 
 .flow-arrow {
     color: var(--accent-purple);
+}
+
+/* Metadata Section */
+.metadata-section {
+    background: var(--bg-card);
+    border-radius: 6px;
+    margin-bottom: 12px;
+    overflow: hidden;
+}
+
+.metadata-header {
+    padding: 10px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-hover);
+    font-weight: 500;
+    font-size: 0.85rem;
+}
+
+.metadata-header:hover {
+    background: var(--border-color);
+}
+
+.metadata-toggle {
+    font-size: 0.7rem;
+    transition: transform 0.2s;
+}
+
+.metadata-toggle.expanded {
+    transform: rotate(90deg);
+}
+
+.metadata-content {
+    padding: 12px;
+    border-top: 1px solid var(--border);
+}
+
+.metadata-grid {
+    margin-bottom: 12px;
+}
+
+/* View Controls */
+.view-controls {
+    padding: 12px 20px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+}
+
+.view-toggle {
+    display: flex;
+    gap: 0;
+    background: var(--bg-card);
+    border-radius: 6px;
+    padding: 4px;
+    display: inline-flex;
+}
+
+.toggle-btn {
+    padding: 6px 16px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+
+.toggle-btn:hover {
+    color: var(--text-primary);
+}
+
+.toggle-btn.active {
+    background: var(--accent-cyan);
+    color: var(--bg-primary);
+    font-weight: 500;
+}
+
+/* Raw JSON View */
+.raw-json-view {
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    padding: 16px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 500px;
+    overflow: auto;
+}
+
+.raw-json-view .json-key {
+    color: var(--accent-purple);
+}
+
+.raw-json-view .json-string {
+    color: var(--accent-green);
+}
+
+.raw-json-view .json-number {
+    color: var(--accent-yellow);
+}
+
+.raw-json-view .json-boolean {
+    color: var(--accent-cyan);
+}
+
+.raw-json-view .json-null {
+    color: var(--text-tertiary);
 }
