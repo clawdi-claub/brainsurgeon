@@ -658,56 +658,101 @@ function sortEntries(entries) {
     return [...entries].reverse();
 }
 
+function getEntryType(entry) {
+    const type = entry.type || '';
+    if (type === 'message') return 'message';
+    if (type === 'tool' || type === 'toolCall') return 'tool';
+    if (type === 'tool_result' || type === 'toolResult') return 'tool_result';
+    if (type === 'thinking_level_change') return 'thinking';
+    if (type === 'custom') return 'custom';
+    return type;
+}
+
+function filterGroupByType(group) {
+    if (currentEntryTypeFilter === 'all') return true;
+    
+    if (group.type === 'tool_pair') {
+        if (currentEntryTypeFilter === 'tool') return true;
+        if (currentEntryTypeFilter === 'tool_result') return true;
+        return false;
+    }
+    
+    const entryType = getEntryType(group.entry);
+    
+    if (currentEntryTypeFilter === 'message') return entryType === 'message';
+    if (currentEntryTypeFilter === 'tool') return entryType === 'tool';
+    if (currentEntryTypeFilter === 'tool_result') return entryType === 'tool_result';
+    if (currentEntryTypeFilter === 'thinking') {
+        return entryType === 'thinking' || (entryType === 'message' && group.entry.message?.content?.some(c => c.type === 'thinking'));
+    }
+    if (currentEntryTypeFilter === 'custom') return entryType === 'custom';
+    return true;
+}
+
 function renderSessionBody(data) {
-    // Store entries for editing
+    // Store entries for editing (keep original indices)
     window._currentEntries = data.entries;
     currentSessionData = data;
 
-    // Apply type filter and sorting
-    let entries = filterEntriesByType(data.entries);
-    const originalIndices = new Map();
-    data.entries.forEach((e, i) => originalIndices.set(e, i));
+    // Group tool calls with results (on ORIGINAL entries in chronological order)
+    let groupedEntries = groupToolCalls(data.entries);
     
-    // Sort entries
-    entries = sortEntries(entries);
+    // Apply type filter to groups
+    if (currentEntryTypeFilter !== 'all') {
+        groupedEntries = groupedEntries.filter(filterGroupByType);
+    }
     
-    // Group tool calls with results
-    const groupedEntries = groupToolCalls(entries);
+    // Sort groups (newest first or oldest first)
+    if (currentEntrySortOrder === 'newest') {
+        groupedEntries = [...groupedEntries].reverse();
+    }
     
-    // Check for parent/child relationships
-    const childIndices = new Set();
+    // Check for parent/child relationships (using original indices)
+    const childEntryIds = new Set();
     const parentToChildren = {};
     
-    entries.forEach((entry, idx) => {
+    data.entries.forEach((entry, idx) => {
         if (entry.parentId) {
-            childIndices.add(idx);
+            childEntryIds.add(idx);
             if (!parentToChildren[entry.parentId]) parentToChildren[entry.parentId] = [];
-            parentToChildren[entry.parentId].push({ entry, index: originalIndices.get(entry) || idx });
+            parentToChildren[entry.parentId].push({ entry, index: idx, entryId: entry.id || entry.sessionId });
         }
     });
     
-    document.getElementById('modalBody2').innerHTML = groupedEntries.map((group, idx) => {
-        const entryIndex = group.index || idx;
+    // Track which child indices have been rendered
+    const renderedChildIndices = new Set();
+    
+    document.getElementById('modalBody2').innerHTML = groupedEntries.map((group) => {
+        let entryIndex, entry;
         
-        // Skip child entries - they will be rendered under their parent
-        if (childIndices.has(entryIndex)) {
+        if (group.type === 'tool_pair') {
+            entryIndex = group.callIndex;
+            entry = group.call;
+        } else {
+            entryIndex = group.index;
+            entry = group.entry;
+        }
+        
+        // Skip if this is a child entry that will be rendered under its parent
+        if (childEntryIds.has(entryIndex)) {
             return '';
         }
+        
+        // Mark children of this entry as rendered
+        const entryId = entry.id || entry.sessionId || entry.call_id;
+        const children = parentToChildren[entryId] || [];
+        children.forEach(c => renderedChildIndices.add(c.index));
         
         if (group.type === 'tool_pair') {
             // Tool call + result pair grouped together
             return `
             <div class="entry-group tool-pair-group">
                 <div class="group-label">🔧 → 📥</div>
-                ${renderEntryWithToggle(group.call, entryIndex, data.agent, data.id)}
-                ${renderEntryWithToggle(group.result, group.resultIndex || entryIndex + 500, data.agent, data.id)}
+                ${renderEntryWithToggle(group.call, group.callIndex, data.agent, data.id)}
+                ${renderEntryWithToggle(group.result, group.resultIndex, data.agent, data.id)}
             </div>
             `;
         } else {
-            // Check if this entry has children
-            const entryId = group.entry.id || group.entry.sessionId || group.entry.call_id;
-            const children = parentToChildren[entryId] || [];
-            
             if (children.length > 0) {
                 // Show parent with children indented below
                 return `
