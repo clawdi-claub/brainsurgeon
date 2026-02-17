@@ -397,26 +397,55 @@ async function confirmDelete(agent, id) {
     }
 }
 
-// View mode state
-let currentViewMode = 'normal';
-let currentSessionData = null;
-
-function setViewMode(mode) {
-    currentViewMode = mode;
-    document.getElementById('btnNormalView').classList.toggle('active', mode === 'normal');
-    document.getElementById('btnRawView').classList.toggle('active', mode === 'raw');
-    
-    if (currentSessionData) {
-        renderSessionBody(currentSessionData);
-    }
-}
-
 function toggleMetadata() {
     const content = document.getElementById('metadataContent');
     const toggle = document.querySelector('.metadata-toggle');
     const isExpanded = content.style.display !== 'none';
     content.style.display = isExpanded ? 'none' : 'block';
     toggle.classList.toggle('expanded', !isExpanded);
+}
+
+// View mode state for each entry
+const entryViewModes = {};
+
+function toggleEntryView(entryIndex) {
+    const currentMode = entryViewModes[entryIndex] || 'normal';
+    const newMode = currentMode === 'normal' ? 'raw' : 'normal';
+    entryViewModes[entryIndex] = newMode;
+    
+    const btnNormal = document.getElementById(`btn-normal-${entryIndex}`);
+    const btnRaw = document.getElementById(`btn-raw-${entryIndex}`);
+    const contentNormal = document.getElementById(`content-normal-${entryIndex}`);
+    const contentRaw = document.getElementById(`content-raw-${entryIndex}`);
+    
+    if (btnNormal && btnRaw) {
+        btnNormal.classList.toggle('active', newMode === 'normal');
+        btnRaw.classList.toggle('active', newMode === 'raw');
+    }
+    
+    if (contentNormal && contentRaw) {
+        contentNormal.style.display = newMode === 'normal' ? 'block' : 'none';
+        contentRaw.style.display = newMode === 'raw' ? 'block' : 'none';
+    }
+}
+
+function setEntryViewMode(entryIndex, mode) {
+    entryViewModes[entryIndex] = mode;
+    
+    const btnNormal = document.getElementById(`btn-normal-${entryIndex}`);
+    const btnRaw = document.getElementById(`btn-raw-${entryIndex}`);
+    const contentNormal = document.getElementById(`content-normal-${entryIndex}`);
+    const contentRaw = document.getElementById(`content-raw-${entryIndex}`);
+    
+    if (btnNormal && btnRaw) {
+        btnNormal.classList.toggle('active', mode === 'normal');
+        btnRaw.classList.toggle('active', mode === 'raw');
+    }
+    
+    if (contentNormal && contentRaw) {
+        contentNormal.style.display = mode === 'normal' ? 'block' : 'none';
+        contentRaw.style.display = mode === 'raw' ? 'block' : 'none';
+    }
 }
 
 function formatJsonHtml(obj, indent = 0) {
@@ -445,52 +474,231 @@ function formatJsonHtml(obj, indent = 0) {
     return String(obj);
 }
 
+function renderEntryContentNormal(entry) {
+    if (entry._pruned) {
+        return '<span style="color: var(--accent-yellow)">[pruned]</span>';
+    }
+    
+    try {
+        // For message entries
+        if (entry.type === 'message') {
+            const msg = entry.message || {};
+            let content = msg.content;
+            let html = '';
+            
+            // Role badge
+            if (msg.role) {
+                const roleClass = msg.role === 'user' ? 'role-user' : msg.role === 'assistant' ? 'role-assistant' : 'role-system';
+                html += `<div class="message-role ${roleClass}">${escapeHtml(msg.role)}</div>`;
+            }
+            
+            // Handle content
+            if (typeof content === 'string') {
+                html += `<div class="content-text">${escapeHtml(content).replace(/\n/g, '<br>')}</div>`;
+            } else if (Array.isArray(content)) {
+                content.forEach(item => {
+                    if (item.type === 'text') {
+                        const text = item.text || '';
+                        html += `<div class="content-text">${escapeHtml(text).replace(/\n/g, '<br>')}</div>`;
+                    } else if (item.type === 'thinking') {
+                        const thinking = item.thinking || '';
+                        html += `<details class="thinking-block"><summary>🧠 Thinking</summary><div class="thinking-content">${escapeHtml(thinking).replace(/\n/g, '<br>')}</div></details>`;
+                    } else if (item.type === 'toolCall') {
+                        const name = item.name || item.function?.name || 'unknown';
+                        const args = item.arguments || item.function?.arguments || '{}';
+                        const argsObj = typeof args === 'string' ? JSON.parse(args) : args;
+                        html += renderKeyValueList({ 'Tool': name, 'Arguments': argsObj }, 0);
+                    } else if (item.type === 'toolResult') {
+                        const text = item.text || '';
+                        html += `<details class="tool-result-block"><summary>📥 Tool Result</summary><div class="tool-result-content">${escapeHtml(text).replace(/\n/g, '<br>')}</div></details>`;
+                    } else {
+                        html += renderKeyValueList(item, 0);
+                    }
+                });
+            } else if (typeof content === 'object' && content !== null) {
+                html += renderKeyValueList(content, 0);
+            }
+            
+            // Render other message properties
+            const otherProps = {};
+            for (const [key, val] of Object.entries(msg)) {
+                if (key !== 'role' && key !== 'content') {
+                    otherProps[key] = val;
+                }
+            }
+            if (Object.keys(otherProps).length > 0) {
+                html += renderKeyValueList(otherProps, 0, true);
+            }
+            
+            return html;
+        }
+        
+        // For tool entries
+        if (entry.type === 'tool' || entry.type === 'toolCall') {
+            const name = entry.name || entry.function?.name || 'unknown';
+            const args = entry.arguments || entry.function?.arguments || '{}';
+            const argsObj = typeof args === 'string' ? JSON.parse(args) : args;
+            return renderKeyValueList({ 'Tool': name, 'Arguments': argsObj }, 0);
+        }
+        
+        // For tool_result entries
+        if (entry.type === 'tool_result' || entry.type === 'toolResult') {
+            const content = entry.content;
+            if (Array.isArray(content)) {
+                let html = '';
+                content.forEach(item => {
+                    if (item.type === 'text') {
+                        html += `<div class="content-text">${escapeHtml(item.text || '').replace(/\n/g, '<br>')}</div>`;
+                    } else {
+                        html += renderKeyValueList(item, 0);
+                    }
+                });
+                return html;
+            } else if (typeof content === 'string') {
+                return `<div class="content-text">${escapeHtml(content).replace(/\n/g, '<br>')}</div>`;
+            } else if (typeof content === 'object' && content !== null) {
+                return renderKeyValueList(content, 0);
+            }
+        }
+        
+        // For system/custom entries - render as key/value list
+        return renderKeyValueList(entry, 0);
+    } catch (e) {
+        return escapeHtml(String(entry));
+    }
+}
+
+function renderKeyValueList(obj, depth = 0, isNested = false) {
+    if (obj === null) return '<span class="kv-null">null</span>';
+    if (typeof obj === 'boolean') return `<span class="kv-boolean">${obj}</span>`;
+    if (typeof obj === 'number') return `<span class="kv-number">${obj}</span>`;
+    if (typeof obj === 'string') {
+        // Check if it's multiline
+        if (obj.includes('\n')) {
+            return `<div class="kv-multiline">${escapeHtml(obj).replace(/\n/g, '<br>')}</div>`;
+        }
+        return `<span class="kv-string">${escapeHtml(obj)}</span>`;
+    }
+    
+    if (Array.isArray(obj)) {
+        if (obj.length === 0) return '<span class="kv-empty">[]</span>';
+        const items = obj.map((item, i) => {
+            const rendered = renderKeyValueList(item, depth + 1, true);
+            if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
+                return `<div class="kv-array-item">${rendered}</div>`;
+            }
+            return `<div class="kv-array-item"><span class="kv-index">${i}:</span> ${rendered}</div>`;
+        }).join('');
+        return `<div class="kv-array" style="margin-left: ${depth * 12}px">${items}</div>`;
+    }
+    
+    if (typeof obj === 'object') {
+        const keys = Object.keys(obj);
+        if (keys.length === 0) return '<span class="kv-empty">{}</span>';
+        
+        const items = keys.map(key => {
+            const val = obj[key];
+            const rendered = renderKeyValueList(val, depth + 1, true);
+            return `<div class="kv-item"><span class="kv-key">${escapeHtml(key)}:</span> ${rendered}</div>`;
+        }).join('');
+        
+        const className = isNested ? 'kv-nested' : 'kv-root';
+        return `<div class="${className}" style="margin-left: ${depth * 12}px">${items}</div>`;
+    }
+    
+    return escapeHtml(String(obj));
+}
+
+function renderEntryContentRaw(entry) {
+    const jsonStr = JSON.stringify(entry, null, 2);
+    return `<pre class="raw-json-view">${formatJsonHtml(entry)}</pre>`;
+}
+
 function renderSessionBody(data) {
-    if (currentViewMode === 'raw') {
-        // Raw JSON view
-        document.getElementById('modalBody2').innerHTML = `<pre class="raw-json-view">${formatJsonHtml(data)}</pre>`;
-    } else {
-        // Normal view - grouped entries
-        const groupedEntries = groupToolCalls(data.entries);
-        document.getElementById('modalBody2').innerHTML = groupedEntries.map((group, idx) => {
-            if (group.type === 'tool_pair') {
+    // Store entries for editing
+    window._currentEntries = data.entries;
+
+    // Group tool calls with results
+    const groupedEntries = groupToolCalls(data.entries);
+    
+    // Check for parent/child relationships
+    const childEntries = data.entries.filter(e => e.parentId);
+    const parentToChildren = {};
+    childEntries.forEach(child => {
+        if (!parentToChildren[child.parentId]) parentToChildren[child.parentId] = [];
+        parentToChildren[child.parentId].push(child);
+    });
+    
+    document.getElementById('modalBody2').innerHTML = groupedEntries.map((group, idx) => {
+        const entryIndex = group.index || idx;
+        
+        if (group.type === 'tool_pair') {
+            // Tool call + result pair grouped together
+            return `
+            <div class="entry-group tool-pair-group">
+                <div class="group-label">🔧 → 📥</div>
+                ${renderEntryWithToggle(group.call, entryIndex, data.agent, data.id)}
+                ${renderEntryWithToggle(group.result, group.resultIndex || entryIndex + 500, data.agent, data.id)}
+            </div>
+            `;
+        } else {
+            // Check if this entry has children
+            const entryId = group.entry.id || group.entry.sessionId;
+            const children = parentToChildren[entryId] || [];
+            
+            if (children.length > 0) {
+                // Show parent with children indented below
                 return `
-                <div class="entry-group">
-                    <div class="entry entry-tool-call">
-                        <div class="entry-header">
-                            <span class="entry-type">🔧 Tool Call #${idx + 1}</span>
-                            <span>${group.call.timestamp || ''}</span>
-                        </div>
-                        <div class="entry-content">${formatEntryContent(group.call)}</div>
-                        <div class="entry-actions" onclick="event.stopPropagation()">
-                            <button class="btn btn-small" onclick="editEntry('${data.agent}', '${data.id}', ${group.callIndex})">Edit</button>
-                        </div>
+                <div class="entry-group parent-group">
+                    <div class="parent-entry">
+                        ${renderEntryWithToggle(group.entry, entryIndex, data.agent, data.id)}
                     </div>
-                    <div class="entry entry-tool-result">
-                        <div class="entry-header">
-                            <span class="entry-type">📥 Result</span>
-                        </div>
-                        <div class="entry-content">${formatEntryContent(group.result)}</div>
-                    </div>
-                </div>
-                `;
-            } else {
-                return `
-                <div class="entry ${group.entry._pruned ? 'pruned' : ''}">
-                    <div class="entry-header">
-                        <span class="entry-type">${getEntryTypeLabel(group.entry)}</span>
-                        <span>${group.entry.timestamp || ''}</span>
-                    </div>
-                    <div class="entry-content">${formatEntryContent(group.entry)}</div>
-                    <div class="entry-actions" onclick="event.stopPropagation()">
-                        <button class="btn btn-small" onclick="editEntry('${data.agent}', '${data.id}', ${group.index})">Edit</button>
-                        <button class="btn btn-small btn-danger" onclick="deleteEntry('${data.agent}', '${data.id}', ${group.index})">Delete</button>
+                    <div class="children-container">
+                        ${children.map((child, ci) => {
+                            const childIdx = data.entries.indexOf(child);
+                            return `<div class="child-entry">${renderEntryWithToggle(child, childIdx >= 0 ? childIdx : entryIndex + 1000 + ci, data.agent, data.id)}</div>`;
+                        }).join('')}
                     </div>
                 </div>
                 `;
             }
-        }).join('');
-    }
+            
+            // Regular entry with toggle
+            return renderEntryWithToggle(group.entry, entryIndex, data.agent, data.id);
+        }
+    }).join('');
+}
+
+function renderEntryWithToggle(entry, index, agent, sessionId) {
+    const typeLabel = getEntryTypeLabel(entry);
+    const timestamp = entry.timestamp || '';
+    
+    return `
+    <div class="entry ${entry._pruned ? 'pruned' : ''}" data-entry-index="${index}">
+        <div class="entry-header">
+            <span class="entry-type">${typeLabel}</span>
+            <div class="entry-header-right">
+                <span class="entry-timestamp">${timestamp}</span>
+                <div class="entry-view-toggle">
+                    <button class="toggle-btn active" id="btn-normal-${index}" onclick="setEntryViewMode(${index}, 'normal')">normal</button>
+                    <button class="toggle-btn" id="btn-raw-${index}" onclick="setEntryViewMode(${index}, 'raw')">raw</button>
+                </div>
+            </div>
+        </div>
+        <div class="entry-content-wrapper">
+            <div id="content-normal-${index}" class="entry-content-normal">
+                ${renderEntryContentNormal(entry)}
+            </div>
+            <div id="content-raw-${index}" class="entry-content-raw" style="display: none;">
+                ${renderEntryContentRaw(entry)}
+            </div>
+        </div>
+        <div class="entry-actions" onclick="event.stopPropagation()">
+            <button class="btn btn-small" onclick="editEntry('${agent}', '${sessionId}', ${index})">Edit</button>
+            <button class="btn btn-small btn-danger" onclick="deleteEntry('${agent}', '${sessionId}', ${index})">Delete</button>
+        </div>
+    </div>
+    `;
 }
 
 // View session - DEFAULT to view now
@@ -504,7 +712,6 @@ async function viewSession(agent, id) {
     try {
         const r = await fetch(`${API}/sessions/${agent}/${id}`);
         const data = await r.json();
-        currentSessionData = data;
 
         // Update header
         document.getElementById('modalTitle2').textContent = data.label || id;
