@@ -1,7 +1,10 @@
 const API = '/api';
 let sessions = [];
 let currentAgent = 'all';
+let currentStatusFilter = 'all';
+let currentTypeFilter = 'all';
 
+// Format helpers
 function formatBytes(bytes) {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -23,6 +26,23 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// Custom Modal Dialog
+function showCustomModal(title, bodyHtml, footerHtml) {
+    document.getElementById('modalTitle').textContent = title;
+    document.getElementById('modalBody').innerHTML = bodyHtml;
+    document.getElementById('modalFooter').innerHTML = footerHtml;
+    document.getElementById('customModal').classList.add('active');
+}
+
+function closeCustomModal() {
+    document.getElementById('customModal').classList.remove('active');
+}
+
+function closeViewModal() {
+    document.getElementById('viewModal').classList.remove('active');
+}
+
+// Load agents
 async function loadAgents() {
     try {
         const r = await fetch(`${API}/agents`);
@@ -38,11 +58,26 @@ async function loadAgents() {
             filter.appendChild(btn);
         });
         filter.querySelector('[data-agent="all"]').onclick = () => selectAgent('all');
+        
+        // Update type filter with agents
+        updateTypeFilter(data.agents);
     } catch (e) {
         console.error('Failed to load agents', e);
     }
 }
 
+function updateTypeFilter(agents) {
+    const typeFilter = document.getElementById('typeFilter');
+    typeFilter.innerHTML = '<option value="all">All Types</option>';
+    agents.forEach(agent => {
+        const opt = document.createElement('option');
+        opt.value = agent;
+        opt.textContent = agent;
+        typeFilter.appendChild(opt);
+    });
+}
+
+// Load sessions
 async function loadSessions() {
     try {
         const url = currentAgent === 'all' ? `${API}/sessions` : `${API}/sessions?agent=${currentAgent}`;
@@ -51,17 +86,43 @@ async function loadSessions() {
         sessions = data.sessions;
         renderSessions();
         updateStats(data);
+        loadTrashCount();
     } catch (e) {
         document.getElementById('sessionGrid').innerHTML = '<div class="empty">Failed to load sessions</div>';
     }
 }
 
+async function loadTrashCount() {
+    try {
+        const r = await fetch(`${API}/trash`);
+        const data = await r.json();
+        document.getElementById('statTrash').textContent = data.sessions.length;
+    } catch (e) {
+        document.getElementById('statTrash').textContent = '0';
+    }
+}
+
+// Filter handlers
 function selectAgent(agent) {
     currentAgent = agent;
     document.querySelectorAll('.agent-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.agent === agent);
     });
     loadSessions();
+}
+
+function applyFilters() {
+    currentStatusFilter = document.getElementById('statusFilter').value;
+    currentTypeFilter = document.getElementById('typeFilter').value;
+    renderSessions();
+}
+
+function getFilteredSessions() {
+    return sessions.filter(s => {
+        if (currentStatusFilter !== 'all' && s.status !== currentStatusFilter) return false;
+        if (currentTypeFilter !== 'all' && s.agent !== currentTypeFilter) return false;
+        return true;
+    });
 }
 
 function updateStats(data) {
@@ -73,21 +134,33 @@ function updateStats(data) {
     document.getElementById('statTools').textContent = totalTools;
 }
 
+// Render sessions
 function renderSessions() {
     const grid = document.getElementById('sessionGrid');
-    if (sessions.length === 0) {
+    const filtered = getFilteredSessions();
+    
+    if (filtered.length === 0) {
         grid.innerHTML = '<div class="empty">No sessions found</div>';
         return;
     }
 
-    grid.innerHTML = sessions.map(s => `
-        <div class="session-card">
+    grid.innerHTML = filtered.map(s => {
+        const isStale = s.is_stale || s.status === 'stale';
+        const staleBadge = isStale ? '<span class="stale-badge">STALE</span>' : '';
+        const modelBadge = s.model ? `<span class="session-model">${escapeHtml(s.model)}</span>` : '';
+        
+        return `
+        <div class="session-card ${isStale ? 'stale' : ''}" onclick="viewSession('${s.agent}', '${s.id}')">
+            ${staleBadge}
             <div class="session-header">
                 <div>
                     <div class="session-id">${s.id}</div>
                     <div class="session-label">${escapeHtml(s.label)}</div>
                 </div>
                 <span class="session-agent">${s.agent}</span>
+            </div>
+            <div class="session-model-row">
+                ${modelBadge}
             </div>
             <div class="session-stats">
                 <div class="session-stat">
@@ -105,57 +178,93 @@ function renderSessions() {
             </div>
             <div class="session-meta">
                 <span>${formatDuration(s.duration_minutes)}</span>
-                <span>${s.updated ? new Date(s.updated).toLocaleString() : '—'}</span>
+                <span class="status-${s.status}">${s.updated ? new Date(s.updated).toLocaleString() : '—'}</span>
             </div>
-            <div class="session-actions">
+            <div class="session-actions" onclick="event.stopPropagation()">
                 <button class="btn" onclick="viewSession('${s.agent}', '${s.id}')">View</button>
-                <button class="btn" onclick="pruneSession('${s.agent}', '${s.id}')">Prune</button>
-                <button class="btn btn-danger" onclick="deleteSession('${s.agent}', '${s.id}')">Delete</button>
+                <button class="btn" onclick="showPruneDialog('${s.agent}', '${s.id}')">Prune</button>
+                <button class="btn btn-danger" onclick="showDeleteDialog('${s.agent}', '${s.id}', '${escapeHtml(s.label)}')">Delete</button>
             </div>
         </div>
-    `).join('');
+    `}).join('');
 }
 
-async function viewSession(agent, id) {
-    document.getElementById('viewModal').classList.add('active');
-    document.getElementById('modalTitle').textContent = 'Loading...';
-    document.getElementById('modalId').textContent = id;
-    document.getElementById('modalBody').innerHTML = '<div class="loading">Loading...</div>';
-
-    try {
-        const r = await fetch(`${API}/sessions/${agent}/${id}`);
-        const data = await r.json();
-        document.getElementById('modalTitle').textContent = data.label || id;
-        document.getElementById('modalId').textContent = `${data.agent} • ${formatBytes(data.size)}`;
-
-        document.getElementById('modalBody').innerHTML = data.entries.map((e, i) => `
-            <div class="entry">
-                <div class="entry-header">
-                    <span>#${i} • ${e.role || 'unknown'}</span>
-                    <span>${e.timestamp || ''}</span>
-                </div>
-                <div class="entry-content">${escapeHtml(JSON.stringify(e, null, 2))}</div>
-            </div>
-        `).join('');
-    } catch (e) {
-        document.getElementById('modalBody').innerHTML = '<div class="empty">Failed to load session</div>';
-    }
+// Show prune dialog with custom modal
+function showPruneDialog(agent, id) {
+    const bodyHtml = `
+        <div class="modal-checkbox-group">
+            <input type="checkbox" id="keepToolCalls" class="modal-checkbox" checked>
+            <label for="keepToolCalls" class="modal-label">Keep tool calls</label>
+            <input type="number" id="keepCount" class="modal-input" value="3" min="0" max="100">
+            <span class="modal-label">recent calls</span>
+        </div>
+        <div class="modal-checkbox-group">
+            <input type="checkbox" id="lightPrune" class="modal-checkbox">
+            <label for="lightPrune" class="modal-label">Light prune (summarize long responses)</label>
+        </div>
+    `;
+    
+    const footerHtml = `
+        <button class="btn" onclick="closeCustomModal()">Cancel</button>
+        <button class="btn" onclick="confirmPrune('${agent}', '${id}')">Prune</button>
+    `;
+    
+    showCustomModal('Prune Session', bodyHtml, footerHtml);
 }
 
-async function pruneSession(agent, id) {
-    if (!confirm('Prune old tool call output? Keeps last 3 calls.')) return;
+async function confirmPrune(agent, id) {
+    const keepToolCalls = document.getElementById('keepToolCalls').checked;
+    const keepCount = parseInt(document.getElementById('keepCount').value) || 3;
+    const lightPrune = document.getElementById('lightPrune').checked;
+    
+    // Determine keep_recent value
+    // -1 = light prune, 0 = remove all, >0 = keep that many
+    let keepRecent = keepCount;
+    if (lightPrune) keepRecent = -1;
+    else if (!keepToolCalls) keepRecent = 0;
+    
+    closeCustomModal();
+    
     try {
-        const r = await fetch(`${API}/sessions/${agent}/${id}/prune`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({keep_recent: 3}) });
+        const r = await fetch(`${API}/sessions/${agent}/${id}/prune`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({keep_recent: keepRecent})
+        });
         const data = await r.json();
-        alert(`Pruned! Saved ${formatBytes(data.saved_bytes)}`);
+        
+        // Show result
+        const bodyHtml = `<p>Pruned ${data.entries_pruned} entries.</p>
+            <p>Saved ${formatBytes(data.saved_bytes)} (${formatBytes(data.original_size)} → ${formatBytes(data.new_size)})</p>
+            <p>Mode: ${data.mode}</p>`;
+        const footerHtml = `<button class="btn" onclick="closeCustomModal()">OK</button>`;
+        showCustomModal('Prune Complete', bodyHtml, footerHtml);
+        
         loadSessions();
     } catch (e) {
         alert('Prune failed');
     }
 }
 
-async function deleteSession(agent, id) {
-    if (!confirm(`Delete session ${id}? This cannot be undone.`)) return;
+// Show delete dialog with custom modal
+function showDeleteDialog(agent, id, label) {
+    const bodyHtml = `
+        <p>Delete session <strong>${escapeHtml(label)}</strong>?</p>
+        <p style="margin-top: 12px; color: var(--text-secondary)">This will move the session to trash. It will be automatically purged after 14 days.</p>
+        <p style="margin-top: 8px; color: var(--accent-orange)">Child sessions will also be deleted.</p>
+    `;
+    
+    const footerHtml = `
+        <button class="btn" onclick="closeCustomModal()">Cancel</button>
+        <button class="btn btn-danger" onclick="confirmDelete('${agent}', '${id}')">Delete</button>
+    `;
+    
+    showCustomModal('Delete Session', bodyHtml, footerHtml);
+}
+
+async function confirmDelete(agent, id) {
+    closeCustomModal();
+    
     try {
         await fetch(`${API}/sessions/${agent}/${id}`, { method: 'DELETE' });
         loadSessions();
@@ -164,13 +273,273 @@ async function deleteSession(agent, id) {
     }
 }
 
-function closeModal() {
-    document.getElementById('viewModal').classList.remove('active');
+// View session - DEFAULT to view now
+async function viewSession(agent, id) {
+    document.getElementById('viewModal').classList.add('active');
+    document.getElementById('modalTitle2').textContent = 'Loading...';
+    document.getElementById('modalId').textContent = id;
+    document.getElementById('modalModels').textContent = '';
+    document.getElementById('modalBody2').innerHTML = '<div class="loading">Loading...</div>';
+
+    try {
+        const r = await fetch(`${API}/sessions/${agent}/${id}`);
+        const data = await r.json();
+        document.getElementById('modalTitle2').textContent = data.label || id;
+        document.getElementById('modalId').textContent = `${data.agent} • ${formatBytes(data.size)}`;
+        
+        // Show models
+        if (data.entries && data.entries.length > 0) {
+            const models = new Set();
+            data.entries.forEach(e => {
+                if (e.type === 'message') {
+                    const msg = e.message || {};
+                    if (msg.model) models.add(msg.model);
+                }
+            });
+            const modelList = Array.from(models);
+            if (modelList.length > 0) {
+                document.getElementById('modalModels').innerHTML = modelList.map(m => 
+                    `<span class="session-model">${escapeHtml(m)}</span>`
+                ).join(' ');
+            }
+        }
+
+        // Group tool calls with results
+        const groupedEntries = groupToolCalls(data.entries);
+        
+        document.getElementById('modalBody2').innerHTML = groupedEntries.map((group, idx) => {
+            if (group.type === 'tool_pair') {
+                // Tool call + result pair
+                const call = group.call;
+                const result = group.result;
+                return `
+                <div class="entry-group">
+                    <div class="entry entry-tool-call">
+                        <div class="entry-header">
+                            <span class="entry-type">🔧 Tool Call #${idx + 1}</span>
+                            <span>${call.timestamp || ''}</span>
+                        </div>
+                        <div class="entry-content">${formatEntryContent(call)}</div>
+                        <div class="entry-actions" onclick="event.stopPropagation()">
+                            <button class="btn btn-small" onclick="editEntry('${agent}', '${id}', ${group.callIndex})">Edit</button>
+                        </div>
+                    </div>
+                    <div class="entry entry-tool-result">
+                        <div class="entry-header">
+                            <span class="entry-type">📥 Result</span>
+                        </div>
+                        <div class="entry-content">${formatEntryContent(result)}</div>
+                    </div>
+                </div>
+                `;
+            } else {
+                // Regular entry
+                return `
+                <div class="entry ${group.entry._pruned ? 'pruned' : ''}">
+                    <div class="entry-header">
+                        <span class="entry-type">${getEntryTypeLabel(group.entry)}</span>
+                        <span>${group.entry.timestamp || ''}</span>
+                    </div>
+                    <div class="entry-content">${formatEntryContent(group.entry)}</div>
+                    <div class="entry-actions" onclick="event.stopPropagation()">
+                        <button class="btn btn-small" onclick="editEntry('${agent}', '${id}', ${group.index})">Edit</button>
+                        <button class="btn btn-small btn-danger" onclick="deleteEntry('${agent}', '${id}', ${group.index})">Delete</button>
+                    </div>
+                </div>
+                `;
+            }
+        }).join('');
+    } catch (e) {
+        document.getElementById('modalBody2').innerHTML = '<div class="empty">Failed to load session</div>';
+    }
 }
 
-document.getElementById('viewModal').onclick = (e) => {
-    if (e.target.id === 'viewModal') closeModal();
+function groupToolCalls(entries) {
+    const grouped = [];
+    let i = 0;
+    
+    while (i < entries.length) {
+        const entry = entries[i];
+        
+        // Check if this is a tool call
+        let isToolCall = false;
+        let toolId = null;
+        
+        if (entry.type === 'tool') {
+            isToolCall = true;
+            toolId = entry.id || entry.call_id;
+        } else if (entry.type === 'message') {
+            const msg = entry.message || {};
+            if (msg.tool_calls && msg.tool_calls.length > 0) {
+                isToolCall = true;
+                toolId = msg.tool_calls[0].id;
+            }
+        }
+        
+        if (isToolCall) {
+            // Look for the corresponding result
+            let result = null;
+            let resultIndex = -1;
+            
+            for (let j = i + 1; j < entries.length; j++) {
+                const next = entries[j];
+                
+                if (next.type === 'tool_result') {
+                    if (next.id === toolId || next.call_id === toolId) {
+                        result = next;
+                        resultIndex = j;
+                        break;
+                    }
+                } else if (next.type === 'message') {
+                    const msg = next.message || {};
+                    if (msg.role === 'toolResult') {
+                        // Check if content references the tool id
+                        const content = msg.content;
+                        if (typeof content === 'string' && content.includes(toolId)) {
+                            result = next;
+                            resultIndex = j;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            if (result) {
+                grouped.push({ type: 'tool_pair', call: entry, result: result, callIndex: i, resultIndex: resultIndex });
+                i = resultIndex + 1;
+            } else {
+                grouped.push({ type: 'single', entry: entry, index: i });
+                i++;
+            }
+        } else {
+            grouped.push({ type: 'single', entry: entry, index: i });
+            i++;
+        }
+    }
+    
+    return grouped;
+}
+
+function getEntryTypeLabel(entry) {
+    if (entry.type === 'message') {
+        const role = entry.message?.role || 'unknown';
+        const icons = { user: '👤', assistant: '🤖', system: '⚙️', toolResult: '📥' };
+        return (icons[role] || '❓') + ' ' + role;
+    }
+    if (entry.type === 'tool') return '🔧 Tool Call';
+    if (entry.type === 'tool_result') return '📥 Tool Result';
+    return '❓ ' + (entry.type || 'unknown');
+}
+
+function formatEntryContent(entry) {
+    if (entry._pruned) {
+        return '<span style="color: var(--accent-yellow)">[pruned]</span>';
+    }
+    
+    try {
+        // For message entries
+        if (entry.type === 'message') {
+            const msg = entry.message || {};
+            let content = msg.content;
+            
+            if (typeof content === 'string') {
+                return escapeHtml(content);
+            } else if (Array.isArray(content)) {
+                // Handle content array (tool calls, etc.)
+                return escapeHtml(JSON.stringify(content, null, 2));
+            }
+            return escapeHtml(JSON.stringify(content, null, 2));
+        }
+        
+        // For tool/tool_result entries
+        return escapeHtml(JSON.stringify(entry, null, 2));
+    } catch (e) {
+        return escapeHtml(String(entry));
+    }
+}
+
+// Edit entry
+function editEntry(agent, sessionId, index) {
+    const entry = getEntryAtIndex(index);
+    if (!entry) return;
+    
+    const bodyHtml = `
+        <textarea id="editEntryContent" class="modal-input" style="width: 100%; height: 300px; font-family: monospace;">${escapeHtml(JSON.stringify(entry, null, 2))}</textarea>
+    `;
+    
+    const footerHtml = `
+        <button class="btn" onclick="closeCustomModal()">Cancel</button>
+        <button class="btn" onclick="saveEntry('${agent}', '${sessionId}', ${index})">Save</button>
+    `;
+    
+    showCustomModal(`Edit Entry #${index}`, bodyHtml, footerHtml);
+}
+
+function getEntryAtIndex(index) {
+    // We need to fetch the session again or keep it in memory
+    // For simplicity, we'll use the current modal data
+    const entries = window._currentEntries;
+    return entries ? entries[index] : null;
+}
+
+async function saveEntry(agent, sessionId, index) {
+    const content = document.getElementById('editEntryContent').value;
+    
+    try {
+        const entry = JSON.parse(content);
+        const r = await fetch(`${API}/sessions/${agent}/${sessionId}/entries/${index}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ index: index, entry: entry })
+        });
+        
+        if (r.ok) {
+            closeCustomModal();
+            viewSession(agent, sessionId); // Refresh
+        } else {
+            alert('Failed to save entry');
+        }
+    } catch (e) {
+        alert('Invalid JSON');
+    }
+}
+
+// Delete single entry
+async function deleteEntry(agent, sessionId, index) {
+    if (!confirm(`Delete entry #${index}?`)) return;
+    
+    // For now, we'll just truncate the content
+    // Full delete would require re-writing the file
+    try {
+        const entry = getEntryAtIndex(index);
+        entry._deleted = true;
+        entry.content = '[deleted]';
+        
+        await fetch(`${API}/sessions/${agent}/${sessionId}/entries/${index}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ index: index, entry: entry })
+        });
+        
+        viewSession(agent, sessionId);
+    } catch (e) {
+        alert('Failed to delete entry');
+    }
+}
+
+// Modal click-outside to close
+document.getElementById('customModal').onclick = (e) => {
+    if (e.target.id === 'customModal') closeCustomModal();
 };
 
+document.getElementById('viewModal').onclick = (e) => {
+    if (e.target.id === 'viewModal') closeViewModal();
+};
+
+// Filter event listeners
+document.getElementById('statusFilter').addEventListener('change', applyFilters);
+document.getElementById('typeFilter').addEventListener('change', applyFilters);
+
+// Initial load
 loadAgents();
 loadSessions();

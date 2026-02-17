@@ -10,8 +10,20 @@
 <body>
     <div class="app-header">
         <div class="app-title">🧠 BrainSurgeon</div>
-        <div class="agent-filter" id="agentFilter">
-            <button class="agent-btn active" data-agent="all">All</button>
+        <div class="header-controls">
+            <div class="filter-group">
+                <select id="statusFilter" class="filter-select">
+                    <option value="all">All Status</option>
+                    <option value="active">Active</option>
+                    <option value="stale">Stale</option>
+                </select>
+                <select id="typeFilter" class="filter-select">
+                    <option value="all">All Types</option>
+                </select>
+            </div>
+            <div class="agent-filter" id="agentFilter">
+                <button class="agent-btn active" data-agent="all">All</button>
+            </div>
         </div>
     </div>
 
@@ -20,6 +32,7 @@
         <div class="stat">Total Size: <span class="stat-value" id="statSize">0 MB</span></div>
         <div class="stat">Total Messages: <span class="stat-value" id="statMessages">0</span></div>
         <div class="stat">Tool Calls: <span class="stat-value" id="statTools">0</span></div>
+        <div class="stat">In Trash: <span class="stat-value" id="statTrash">0</span></div>
     </div>
 
     <div class="main-container">
@@ -28,17 +41,36 @@
         </div>
     </div>
 
-    <!-- View Modal -->
-    <div class="modal-overlay" id="viewModal">
-        <div class="modal">
+    <!-- Custom Modal Dialog -->
+    <div class="modal-overlay" id="customModal">
+        <div class="modal custom-modal">
             <div class="modal-head">
                 <div>
-                    <div id="modalTitle">Session</div>
-                    <div class="session-id" id="modalId"></div>
+                    <div class="modal-title-text" id="modalTitle">Dialog</div>
                 </div>
-                <button class="close-x" onclick="closeModal()">×</button>
+                <button class="close-x" onclick="closeCustomModal()">×</button>
             </div>
             <div class="modal-body" id="modalBody">
+                <!-- Dynamic content -->
+            </div>
+            <div class="modal-footer" id="modalFooter">
+                <!-- Dynamic buttons -->
+            </div>
+        </div>
+    </div>
+
+    <!-- View Session Modal -->
+    <div class="modal-overlay" id="viewModal">
+        <div class="modal view-modal">
+            <div class="modal-head">
+                <div>
+                    <div id="modalTitle2">Session</div>
+                    <div class="session-id" id="modalId"></div>
+                    <div class="session-models" id="modalModels"></div>
+                </div>
+                <button class="close-x" onclick="closeViewModal()">×</button>
+            </div>
+            <div class="modal-body" id="modalBody2">
                 <div class="loading">Loading...</div>
             </div>
         </div>

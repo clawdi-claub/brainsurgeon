@@ -11,6 +11,7 @@
     --accent-purple: #b084ff;
     --accent-yellow: #ffd166;
     --accent-red: #ef476f;
+    --accent-orange: #ff9f43;
     --border: #2a2a3a;
 }
 
@@ -30,6 +31,8 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
 }
 
 .app-title {
@@ -38,6 +41,33 @@ body {
     background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
+}
+
+.header-controls {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.filter-group {
+    display: flex;
+    gap: 8px;
+}
+
+.filter-select {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.filter-select:hover {
+    border-color: var(--accent-cyan);
+    color: var(--text-primary);
 }
 
 .agent-filter {
@@ -72,6 +102,7 @@ body {
     background: var(--bg-card);
     border-bottom: 1px solid var(--border);
     font-size: 0.8rem;
+    flex-wrap: wrap;
 }
 
 .stat {
@@ -104,11 +135,28 @@ body {
     padding: 16px;
     cursor: pointer;
     transition: all 0.15s;
+    position: relative;
 }
 
 .session-card:hover {
     border-color: var(--accent-cyan);
     transform: translateY(-2px);
+}
+
+.session-card.stale {
+    border-left: 3px solid var(--accent-orange);
+}
+
+.session-card .stale-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 0.65rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--accent-orange);
+    color: #000;
+    font-weight: 600;
 }
 
 .session-header {
@@ -137,6 +185,22 @@ body {
     border-radius: 12px;
     background: var(--bg-hover);
     color: var(--accent-purple);
+}
+
+.session-model {
+    font-size: 0.65rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--accent-cyan);
+    color: #000;
+    margin-left: 4px;
+    font-weight: 600;
+}
+
+.session-flow {
+    font-size: 0.7rem;
+    color: var(--accent-yellow);
+    margin-top: 4px;
 }
 
 .session-stats {
@@ -200,17 +264,23 @@ body {
     color: var(--accent-red);
 }
 
+.btn-small {
+    padding: 4px 8px;
+    font-size: 0.65rem;
+}
+
+/* Modal styles */
 .modal-overlay {
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.8);
+    background: rgba(0,0,0,0.85);
     z-index: 1000;
     padding: 24px;
     overflow: auto;
 }
 
-.modal-overlay.active { display: flex; justify-content: center; }
+.modal-overlay.active { display: flex; justify-content: center; align-items: flex-start; }
 
 .modal {
     background: var(--bg-card);
@@ -221,6 +291,7 @@ body {
     max-height: 90vh;
     display: flex;
     flex-direction: column;
+    margin: auto;
 }
 
 .modal-head {
@@ -228,13 +299,75 @@ body {
     border-bottom: 1px solid var(--border);
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
+}
+
+.modal-title-text {
+    font-size: 1.2rem;
+    font-weight: 600;
 }
 
 .modal-body {
     flex: 1;
     overflow: auto;
     padding: 20px;
+}
+
+.modal-footer {
+    padding: 16px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+/* Custom modal specific */
+.custom-modal {
+    max-width: 500px;
+}
+
+.modal-checkbox-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.modal-checkbox {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent-cyan);
+}
+
+.modal-input {
+    width: 80px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.modal-input:focus {
+    outline: none;
+    border-color: var(--accent-cyan);
+}
+
+.modal-label {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+/* View modal specific */
+.view-modal {
+    max-width: 1000px;
+}
+
+.session-models {
+    font-size: 0.75rem;
+    color: var(--accent-cyan);
+    margin-top: 4px;
 }
 
 .entry {
@@ -247,12 +380,33 @@ body {
     font-size: 0.8rem;
 }
 
+.entry-tool-call, .entry-tool-result {
+    border-left: 3px solid var(--accent-purple);
+}
+
+.entry-tool-result {
+    border-left-color: var(--accent-cyan);
+    margin-left: 24px;
+}
+
+.entry.pruned {
+    opacity: 0.6;
+    border-left-color: var(--accent-yellow);
+}
+
 .entry-header {
     display: flex;
     justify-content: space-between;
     margin-bottom: 8px;
     font-size: 0.7rem;
     color: var(--accent-purple);
+}
+
+.entry-type {
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--bg-hover);
 }
 
 .entry-content {
@@ -263,12 +417,22 @@ body {
     overflow: auto;
 }
 
+.entry-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
 .close-x {
     background: none;
     border: none;
     color: var(--text-secondary);
     font-size: 1.5rem;
     cursor: pointer;
+}
+
+.close-x:hover {
+    color: var(--text-primary);
 }
 
 .loading {
@@ -281,4 +445,22 @@ body {
     text-align: center;
     padding: 60px;
     color: var(--text-tertiary);
+}
+
+/* Status colors */
+.status-active { color: var(--accent-cyan); }
+.status-stale { color: var(--accent-orange); }
+.status-archived { color: var(--text-tertiary); }
+
+/* Parent-child flow */
+.flow-indicator {
+    font-size: 0.7rem;
+    color: var(--accent-yellow);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.flow-arrow {
+    color: var(--accent-purple);
 }
