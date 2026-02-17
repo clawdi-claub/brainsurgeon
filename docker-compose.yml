@@ -5,7 +5,7 @@ services:
     ports:
       - "0.0.0.0:8654:8654"
     volumes:
-      - /home/openclaw/.openclaw:/home/openclaw/.openclaw:ro
+      - /home/openclaw/.openclaw:/home/openclaw/.openclaw:rw
     environment:
       - OPENCLAW_ROOT=/home/openclaw/.openclaw
     networks:
