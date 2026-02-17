@@ -928,13 +928,30 @@ body {
 }
 
 .children-container {
-    padding: 8px 8px 8px 24px;
+    padding: 8px 8px 8px 32px;
     background: rgba(147, 112, 219, 0.05);
+    border-left: 2px dashed var(--accent-purple);
+    margin-left: 12px;
+    margin-top: 4px;
+}
+
+.child-entry {
+    position: relative;
+}
+
+.child-entry::before {
+    content: "↳";
+    position: absolute;
+    left: -20px;
+    top: 12px;
+    color: var(--accent-purple);
+    font-size: 0.8rem;
 }
 
 .children-container .entry {
     margin-bottom: 8px;
     border-left: 3px solid var(--accent-purple);
+    background: var(--bg-card);
 }
 
 .children-container .entry:last-child {

@@ -622,15 +622,24 @@ function renderSessionBody(data) {
     const groupedEntries = groupToolCalls(data.entries);
     
     // Check for parent/child relationships
-    const childEntries = data.entries.filter(e => e.parentId);
+    const childIndices = new Set();
     const parentToChildren = {};
-    childEntries.forEach(child => {
-        if (!parentToChildren[child.parentId]) parentToChildren[child.parentId] = [];
-        parentToChildren[child.parentId].push(child);
+    
+    data.entries.forEach((entry, idx) => {
+        if (entry.parentId) {
+            childIndices.add(idx);
+            if (!parentToChildren[entry.parentId]) parentToChildren[entry.parentId] = [];
+            parentToChildren[entry.parentId].push({ entry, index: idx });
+        }
     });
     
     document.getElementById('modalBody2').innerHTML = groupedEntries.map((group, idx) => {
         const entryIndex = group.index || idx;
+        
+        // Skip child entries - they will be rendered under their parent
+        if (childIndices.has(entryIndex)) {
+            return '';
+        }
         
         if (group.type === 'tool_pair') {
             // Tool call + result pair grouped together
@@ -643,7 +652,7 @@ function renderSessionBody(data) {
             `;
         } else {
             // Check if this entry has children
-            const entryId = group.entry.id || group.entry.sessionId;
+            const entryId = group.entry.id || group.entry.sessionId || group.entry.call_id;
             const children = parentToChildren[entryId] || [];
             
             if (children.length > 0) {
@@ -654,9 +663,8 @@ function renderSessionBody(data) {
                         ${renderEntryWithToggle(group.entry, entryIndex, data.agent, data.id)}
                     </div>
                     <div class="children-container">
-                        ${children.map((child, ci) => {
-                            const childIdx = data.entries.indexOf(child);
-                            return `<div class="child-entry">${renderEntryWithToggle(child, childIdx >= 0 ? childIdx : entryIndex + 1000 + ci, data.agent, data.id)}</div>`;
+                        ${children.map((child) => {
+                            return `<div class="child-entry">${renderEntryWithToggle(child.entry, child.index, data.agent, data.id)}</div>`;
                         }).join('')}
                     </div>
                 </div>
