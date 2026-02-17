@@ -39,6 +39,7 @@ function closeCustomModal() {
 }
 
 function closeViewModal() {
+    stopAutoRefresh();
     document.getElementById('viewModal').classList.remove('active');
 }
 
@@ -408,6 +409,13 @@ function toggleMetadata() {
 // View mode state for each entry
 const entryViewModes = {};
 
+// Entry filter and sort state
+let currentEntryTypeFilter = 'all';
+let currentEntrySortOrder = 'newest';
+let currentSessionData = null;
+let autoRefreshInterval = null;
+let isUserAtTop = true;
+
 function toggleEntryView(entryIndex) {
     const currentMode = entryViewModes[entryIndex] || 'normal';
     const newMode = currentMode === 'normal' ? 'raw' : 'normal';
@@ -614,22 +622,67 @@ function renderEntryContentRaw(entry) {
     return `<pre class="raw-json-view">${formatJsonHtml(entry)}</pre>`;
 }
 
+function applyEntryTypeFilter() {
+    currentEntryTypeFilter = document.getElementById('entryTypeFilter').value;
+    if (currentSessionData) {
+        renderSessionBody(currentSessionData);
+    }
+}
+
+function applyEntrySortOrder() {
+    currentEntrySortOrder = document.getElementById('entrySortOrder').value;
+    if (currentSessionData) {
+        renderSessionBody(currentSessionData);
+    }
+}
+
+function filterEntriesByType(entries) {
+    if (currentEntryTypeFilter === 'all') return entries;
+    
+    return entries.filter(e => {
+        const type = e.type || '';
+        if (currentEntryTypeFilter === 'message') return type === 'message';
+        if (currentEntryTypeFilter === 'tool') return type === 'tool' || type === 'toolCall';
+        if (currentEntryTypeFilter === 'tool_result') return type === 'tool_result' || type === 'toolResult';
+        if (currentEntryTypeFilter === 'thinking') return type === 'thinking_level_change' || (type === 'message' && e.message?.content?.some(c => c.type === 'thinking'));
+        if (currentEntryTypeFilter === 'custom') return type === 'custom';
+        return true;
+    });
+}
+
+function sortEntries(entries) {
+    if (currentEntrySortOrder === 'oldest') {
+        return [...entries]; // Already in oldest-first order
+    }
+    // Newest first - reverse the array
+    return [...entries].reverse();
+}
+
 function renderSessionBody(data) {
     // Store entries for editing
     window._currentEntries = data.entries;
+    currentSessionData = data;
 
+    // Apply type filter and sorting
+    let entries = filterEntriesByType(data.entries);
+    const originalIndices = new Map();
+    data.entries.forEach((e, i) => originalIndices.set(e, i));
+    
+    // Sort entries
+    entries = sortEntries(entries);
+    
     // Group tool calls with results
-    const groupedEntries = groupToolCalls(data.entries);
+    const groupedEntries = groupToolCalls(entries);
     
     // Check for parent/child relationships
     const childIndices = new Set();
     const parentToChildren = {};
     
-    data.entries.forEach((entry, idx) => {
+    entries.forEach((entry, idx) => {
         if (entry.parentId) {
             childIndices.add(idx);
             if (!parentToChildren[entry.parentId]) parentToChildren[entry.parentId] = [];
-            parentToChildren[entry.parentId].push({ entry, index: idx });
+            parentToChildren[entry.parentId].push({ entry, index: originalIndices.get(entry) || idx });
         }
     });
     
@@ -709,13 +762,81 @@ function renderEntryWithToggle(entry, index, agent, sessionId) {
     `;
 }
 
+// Current view session for auto-refresh
+let currentViewSession = { agent: null, id: null };
+
+// Track scroll position
+function setupScrollTracking() {
+    const modalBody = document.getElementById('modalBody2');
+    if (!modalBody) return;
+    
+    modalBody.addEventListener('scroll', () => {
+        isUserAtTop = modalBody.scrollTop < 50;
+    });
+}
+
+// Auto-refresh session view
+function startAutoRefresh(agent, id) {
+    stopAutoRefresh(); // Clear any existing interval
+    currentViewSession = { agent, id };
+    
+    const indicator = document.getElementById('autoRefreshIndicator');
+    if (indicator) indicator.style.display = 'flex';
+    
+    autoRefreshInterval = setInterval(async () => {
+        if (!document.getElementById('viewModal').classList.contains('active')) {
+            stopAutoRefresh();
+            return;
+        }
+        
+        try {
+            const r = await fetch(`${API}/sessions/${agent}/${id}`);
+            if (!r.ok) return;
+            const data = await r.json();
+            
+            // Only update if there are new entries
+            if (currentSessionData && data.entries.length > currentSessionData.entries.length) {
+                const modalBody = document.getElementById('modalBody2');
+                const wasAtTop = isUserAtTop;
+                const scrollHeight = modalBody.scrollHeight;
+                
+                // Update the data but keep filter/sort settings
+                currentSessionData = data;
+                renderSessionBody(data);
+                
+                // Restore scroll position unless user was at top
+                if (!wasAtTop) {
+                    modalBody.scrollTop = modalBody.scrollHeight - scrollHeight;
+                }
+            }
+        } catch (e) {
+            // Silent fail on auto-refresh
+        }
+    }, 30000); // 30 seconds
+}
+
+function stopAutoRefresh() {
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+    }
+    const indicator = document.getElementById('autoRefreshIndicator');
+    if (indicator) indicator.style.display = 'none';
+}
+
 // View session - DEFAULT to view now
 async function viewSession(agent, id) {
+    stopAutoRefresh();
+    currentViewSession = { agent, id };
+    
     document.getElementById('viewModal').classList.add('active');
     document.getElementById('modalTitle2').textContent = 'Loading...';
     document.getElementById('modalId').textContent = id;
     document.getElementById('modalModels').textContent = '';
     document.getElementById('modalBody2').innerHTML = '<div class="loading">Loading...</div>';
+    
+    // Setup scroll tracking
+    setTimeout(setupScrollTracking, 100);
 
     try {
         const r = await fetch(`${API}/sessions/${agent}/${id}`);
@@ -799,6 +920,11 @@ async function viewSession(agent, id) {
 
         // Render body based on current view mode
         renderSessionBody(data);
+        
+        // Start auto-refresh for active sessions
+        if (!data.is_stale) {
+            startAutoRefresh(agent, id);
+        }
     } catch (e) {
         document.getElementById('modalBody2').innerHTML = '<div class="empty">Failed to load session</div>';
     }
