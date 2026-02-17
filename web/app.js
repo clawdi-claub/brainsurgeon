@@ -985,6 +985,94 @@ document.getElementById('viewModal').onclick = (e) => {
 document.getElementById('statusFilter').addEventListener('change', applyFilters);
 document.getElementById('typeFilter').addEventListener('change', applyFilters);
 
+// Trash view functions
+function openTrashView() {
+    document.getElementById('trashModal').classList.add('active');
+    loadTrashSessions();
+}
+
+function closeTrashModal() {
+    document.getElementById('trashModal').classList.remove('active');
+}
+
+async function loadTrashSessions() {
+    const body = document.getElementById('trashBody');
+    body.innerHTML = '<div class="loading">Loading trashed sessions...</div>';
+    
+    try {
+        const r = await fetch(`${API}/trash`);
+        const data = await r.json();
+        
+        if (!data.sessions || data.sessions.length === 0) {
+            body.innerHTML = '<div class="empty">Trash is empty</div>';
+            return;
+        }
+        
+        body.innerHTML = `
+            <div class="trash-list">
+                ${data.sessions.map(s => {
+                    const trashedAt = s.trashed_at ? new Date(s.trashed_at).toLocaleString() : '—';
+                    const expiresAt = s.expires_at ? new Date(s.expires_at).toLocaleDateString() : '—';
+                    return `
+                    <div class="trash-item">
+                        <div class="trash-info">
+                            <div class="trash-session-id">${s.original_session_id}</div>
+                            <div class="trash-agent">${s.original_agent}</div>
+                            <div class="trash-meta">
+                                <span>Trashed: ${trashedAt}</span>
+                                <span class="trash-expires">Expires: ${expiresAt}</span>
+                            </div>
+                        </div>
+                        <div class="trash-actions">
+                            <button class="btn" onclick="restoreSession('${s.original_agent}', '${s.original_session_id}')">♻️ Restore</button>
+                            <button class="btn btn-danger" onclick="permanentDeleteSession('${s.original_agent}', '${s.original_session_id}')">🗑️ Delete</button>
+                        </div>
+                    </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    } catch (e) {
+        body.innerHTML = '<div class="empty">Failed to load trash</div>';
+    }
+}
+
+async function restoreSession(agent, sessionId) {
+    if (!confirm(`Restore session ${sessionId}?`)) return;
+    
+    try {
+        const r = await fetch(`${API}/trash/${agent}/${sessionId}/restore`, { method: 'POST' });
+        if (r.ok) {
+            loadTrashSessions();
+            loadSessions();
+        } else {
+            alert('Restore failed');
+        }
+    } catch (e) {
+        alert('Restore failed');
+    }
+}
+
+async function permanentDeleteSession(agent, sessionId) {
+    if (!confirm(`Permanently delete session ${sessionId}? This cannot be undone.`)) return;
+    
+    try {
+        const r = await fetch(`${API}/trash/${agent}/${sessionId}`, { method: 'DELETE' });
+        if (r.ok) {
+            loadTrashSessions();
+            loadTrashCount();
+        } else {
+            alert('Delete failed');
+        }
+    } catch (e) {
+        alert('Delete failed');
+    }
+}
+
+document.getElementById('trashModal').onclick = (e) => {
+    if (e.target.id === 'trashModal') closeTrashModal();
+};
+
 // Initial load
 loadAgents();
 loadSessions();

@@ -941,6 +941,61 @@ body {
     margin-bottom: 0;
 }
 
+/* Trash View Styles */
+.trash-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.trash-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.trash-item:hover {
+    border-color: var(--accent-cyan);
+}
+
+.trash-info {
+    flex: 1;
+}
+
+.trash-session-id {
+    font-family: monospace;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.trash-agent {
+    font-size: 0.8rem;
+    color: var(--accent-purple);
+    margin-top: 4px;
+}
+
+.trash-meta {
+    display: flex;
+    gap: 16px;
+    margin-top: 8px;
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+.trash-expires {
+    color: var(--accent-orange);
+}
+
+.trash-actions {
+    display: flex;
+    gap: 8px;
+}
+
 /* Raw JSON View */
 .raw-json-view {
     background: var(--bg-primary);
