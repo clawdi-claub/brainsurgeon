@@ -247,9 +247,112 @@ async function confirmPrune(agent, id) {
 }
 
 // Show delete dialog with custom modal
-function showDeleteDialog(agent, id, label) {
+async function showDeleteDialog(agent, id, label) {
+    // Show loading modal first
+    const loadingHtml = `
+        <div style="text-align: center; padding: 20px;">
+            <div class="loading" style="display: inline-block;"></div>
+            <p style="margin-top: 12px;">Generating session summary...</p>
+        </div>
+    `;
+    showCustomModal('Delete Session', loadingHtml, '');
+    
+    // Fetch summary
+    let summaryData = null;
+    try {
+        const r = await fetch(`${API}/sessions/${agent}/${id}/summary`);
+        if (r.ok) {
+            summaryData = await r.json();
+        }
+    } catch (e) {
+        console.error('Failed to generate summary', e);
+    }
+    
+    // Build summary HTML
+    let summaryHtml = '';
+    if (summaryData && summaryData.summary) {
+        const s = summaryData.summary;
+        const hasContent = s.key_actions?.length > 0 || s.topics?.length > 0 || 
+                          s.tools_used?.length > 0 || s.models_used?.length > 0;
+        
+        if (hasContent) {
+            summaryHtml = `
+                <div class="summary-box" style="
+                    background: var(--bg-secondary);
+                    border: 1px solid var(--border-color);
+                    border-radius: 8px;
+                    padding: 16px;
+                    margin: 12px 0;
+                    font-size: 0.9rem;
+                ">
+                    <h4 style="margin: 0 0 12px 0; color: var(--accent-cyan);">📋 Session Summary</h4>
+                    
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px;">
+                        <div style="text-align: center; padding: 8px; background: var(--bg-tertiary); border-radius: 4px;">
+                            <div style="font-size: 1.2rem; font-weight: 600;">${s.message_count || 0}</div>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary);">Messages</div>
+                        </div>
+                        <div style="text-align: center; padding: 8px; background: var(--bg-tertiary); border-radius: 4px;">
+                            <div style="font-size: 1.2rem; font-weight: 600;">${s.tool_calls || 0}</div>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary);">Tool Calls</div>
+                        </div>
+                        <div style="text-align: center; padding: 8px; background: var(--bg-tertiary); border-radius: 4px;">
+                            <div style="font-size: 1.2rem; font-weight: 600;">${s.duration_estimate ? s.duration_estimate + 'm' : '—'}</div>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary);">Duration</div>
+                        </div>
+                    </div>
+                    
+                    ${s.key_actions?.length ? `
+                        <div style="margin-bottom: 10px;">
+                            <strong style="color: var(--accent-green);">✓ Key Actions:</strong>
+                            <ul style="margin: 4px 0; padding-left: 16px; color: var(--text-secondary);">
+                                ${s.key_actions.map(a => `<li>${escapeHtml(a)}</li>`).join('')}
+                            </ul>
+                        </div>
+                    ` : ''}
+                    
+                    ${s.topics?.length ? `
+                        <div style="margin-bottom: 10px;">
+                            <strong style="color: var(--accent-yellow);">💡 Topics:</strong>
+                            <div style="margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px;">
+                                ${s.topics.slice(0, 3).map(t => `<span style="background: var(--bg-tertiary); padding: 2px 8px; border-radius: 12px; font-size: 0.8rem;">${escapeHtml(t.substring(0, 50))}</span>`).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                    
+                    ${s.tools_used?.length ? `
+                        <div style="margin-bottom: 10px;">
+                            <strong style="color: var(--accent-purple);">🔧 Tools:</strong>
+                            <span style="color: var(--text-secondary); font-size: 0.85rem;">${s.tools_used.slice(0, 5).join(', ')}${s.tools_used.length > 5 ? ' +' + (s.tools_used.length - 5) + ' more' : ''}</span>
+                        </div>
+                    ` : ''}
+                    
+                    ${s.models_used?.length ? `
+                        <div style="margin-bottom: 10px;">
+                            <strong style="color: var(--accent-cyan);">🤖 Models:</strong>
+                            <span style="color: var(--text-secondary); font-size: 0.85rem;">${s.models_used.join(', ')}</span>
+                        </div>
+                    ` : ''}
+                    
+                    ${s.errors?.length ? `
+                        <div style="margin-bottom: 10px;">
+                            <strong style="color: var(--accent-red);">⚠ Errors:</strong>
+                            <ul style="margin: 4px 0; padding-left: 16px; color: var(--accent-orange); font-size: 0.85rem;">
+                                ${s.errors.map(e => `<li>${escapeHtml(e)}</li>`).join('')}
+                            </ul>
+                        </div>
+                    ` : ''}
+                    
+                    ${s.has_git_commits ? '<div style="color: var(--accent-green);">✓ Git commits made</div>' : ''}
+                    ${s.files_created?.length ? `<div style="color: var(--accent-cyan); font-size: 0.85rem;">📝 Files: ${s.files_created.slice(0, 3).join(', ')}</div>` : ''}
+                </div>
+            `;
+        }
+    }
+    
     const bodyHtml = `
         <p>Delete session <strong>${escapeHtml(label)}</strong>?</p>
+        ${summaryHtml}
         <p style="margin-top: 12px; color: var(--text-secondary)">This will move the session to trash. It will be automatically purged after 14 days.</p>
         <p style="margin-top: 8px; color: var(--accent-orange)">Child sessions will also be deleted.</p>
     `;

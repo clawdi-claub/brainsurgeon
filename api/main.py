@@ -71,6 +71,10 @@ class EditEntryRequest(BaseModel):
     entry: dict
 
 
+class DeleteWithSummaryRequest(BaseModel):
+    generate_summary: bool = True
+
+
 def get_agents() -> list[str]:
     """Get list of agent directories."""
     if not AGENTS_DIR.exists():
@@ -256,6 +260,179 @@ def list_sessions(agent: Optional[str] = None):
         agents=get_agents(),
         total_size=total_size,
     )
+
+
+def generate_session_summary(entries: list[dict]) -> dict:
+    """Generate an intelligent summary of a session before deletion."""
+    summary = {
+        "session_type": "chat",
+        "topics": [],
+        "tools_used": set(),
+        "models_used": set(),
+        "key_actions": [],
+        "errors": [],
+        "duration_estimate": None,
+        "message_count": 0,
+        "assistant_messages": 0,
+        "user_messages": 0,
+        "tool_calls": 0,
+        "has_git_commits": False,
+        "files_created": set(),
+        "files_modified": set(),
+    }
+    
+    first_timestamp = None
+    last_timestamp = None
+    topic_keywords = []
+    
+    for entry in entries:
+        entry_type = entry.get("type", "")
+        
+        # Track timestamps for duration
+        ts = entry.get("timestamp")
+        if ts:
+            if not first_timestamp:
+                first_timestamp = ts
+            last_timestamp = ts
+        
+        # Track custom types
+        if entry_type == "custom":
+            custom_type = entry.get("customType", "")
+            if custom_type == "model-snapshot":
+                data = entry.get("data", {})
+                model_id = data.get("modelId")
+                if model_id:
+                    summary["models_used"].add(model_id)
+        
+        # Track message entries
+        if entry_type == "message":
+            summary["message_count"] += 1
+            msg = entry.get("message", {})
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            
+            if role == "assistant":
+                summary["assistant_messages"] += 1
+                # Check for tool calls
+                if msg.get("tool_calls"):
+                    summary["tool_calls"] += len(msg.get("tool_calls", []))
+                    # Extract tool names
+                    for tc in msg.get("tool_calls", []):
+                        tool_name = tc.get("name") or tc.get("function", {}).get("name")
+                        if tool_name:
+                            summary["tools_used"].add(tool_name)
+                
+                # Extract topics from content
+                if isinstance(content, list):
+                    for item in content:
+                        if item.get("type") == "text":
+                            text = item.get("text", "")
+                            # Look for task indicators
+                            if any(kw in text.lower() for kw in ["implement", "build", "create", "fix", "add", "update"]):
+                                # Extract first sentence as action
+                                first_sentence = text.split('.')[0][:100]
+                                if len(first_sentence) > 20:
+                                    summary["key_actions"].append(first_sentence)
+                        elif item.get("type") == "thinking":
+                            thinking = item.get("thinking", "")
+                            # Extract topics from thinking
+                            if len(thinking) > 50:
+                                # Look for keywords indicating work
+                                for kw in ["task", "feature", "implement", "build", "create", "fix"]:
+                                    if kw in thinking.lower():
+                                        topic = thinking[:150].strip()
+                                        if topic not in topic_keywords:
+                                            topic_keywords.append(topic)
+                                        break
+                
+                # Check for errors
+                if msg.get("errorMessage") or msg.get("stopReason") == "error":
+                    error_msg = msg.get("errorMessage", "Unknown error")
+                    summary["errors"].append(error_msg[:200])
+            
+            elif role == "user":
+                summary["user_messages"] += 1
+                # Extract user's intent
+                if isinstance(content, list):
+                    for item in content:
+                        if item.get("type") == "text":
+                            text = item.get("text", "")
+                            # Check for file operations
+                            if any(kw in text.lower() for kw in ["create", "write", "edit", "modify"]):
+                                # Simple file detection
+                                words = text.split()
+                                for word in words:
+                                    if '.' in word and '/' in word:
+                                        if any(ext in word for ext in ['.py', '.js', '.ts', '.html', '.css', '.json', '.md', '.yml', '.yaml']):
+                                            summary["files_created"].add(word.strip('.,;:!?'))
+                            
+        # Track tool results for git/file operations
+        if entry_type == "tool_result":
+            content = entry.get("content", "")
+            if isinstance(content, list):
+                for item in content:
+                    if item.get("type") == "text":
+                        text = item.get("text", "")
+                        if "commit" in text.lower() and any(kw in text for kw in ["created", "modified", "deleted"]):
+                            summary["has_git_commits"] = True
+    
+    # Calculate duration
+    if first_timestamp and last_timestamp:
+        try:
+            from dateutil.parser import isoparse
+            start = isoparse(first_timestamp.replace('Z', '+00:00'))
+            end = isoparse(last_timestamp.replace('Z', '+00:00'))
+            duration_mins = (end - start).total_seconds() / 60
+            summary["duration_estimate"] = round(duration_mins, 1)
+        except:
+            pass
+    
+    # Convert sets to lists for JSON
+    summary["tools_used"] = sorted(list(summary["tools_used"]))[:20]  # Top 20 tools
+    summary["models_used"] = sorted(list(summary["models_used"]))
+    summary["files_created"] = sorted(list(summary["files_created"]))[:10]
+    summary["files_modified"] = sorted(list(summary["files_modified"]))[:10]
+    summary["topics"] = topic_keywords[:5]  # Top 5 topics
+    summary["key_actions"] = summary["key_actions"][:5]  # Top 5 actions
+    summary["errors"] = summary["errors"][:5]  # Top 5 errors
+    
+    # Determine session type
+    if summary["has_git_commits"]:
+        summary["session_type"] = "development"
+    elif summary["tool_calls"] > 5:
+        summary["session_type"] = "tool_heavy"
+    elif summary["message_count"] > 50:
+        summary["session_type"] = "long_chat"
+    
+    return summary
+
+
+@app.get("/sessions/{agent}/{session_id}/summary")
+def get_session_summary(agent: str, session_id: str):
+    """Generate a summary of a session before deletion."""
+    filepath = AGENTS_DIR / agent / "sessions" / f"{session_id}.jsonl"
+    if not filepath.exists():
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Read all entries
+    entries = []
+    with open(filepath, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    entries.append(json.loads(line))
+                except:
+                    continue
+    
+    summary = generate_session_summary(entries)
+    
+    return {
+        "session_id": session_id,
+        "agent": agent,
+        "summary": summary,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 @app.get("/sessions/{agent}/{session_id}", response_model=SessionDetail)
