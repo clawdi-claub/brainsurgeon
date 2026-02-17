@@ -428,6 +428,9 @@ function getEntryTypeLabel(entry) {
     }
     if (entry.type === 'tool') return '🔧 Tool Call';
     if (entry.type === 'tool_result') return '📥 Tool Result';
+    if (entry.type === 'session') return '📋 Session';
+    if (entry.type === 'thinking_level_change') return '🧠 Thinking';
+    if (entry.type === 'custom') return '⚡ ' + (entry.customType || 'Custom');
     return '❓ ' + (entry.type || 'unknown');
 }
 
