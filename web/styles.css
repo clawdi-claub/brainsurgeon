@@ -535,6 +535,35 @@ body {
     text-decoration: underline;
 }
 
+.detail-fullwidth {
+    margin: 8px 0 16px 0;
+}
+
+.skill-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    margin: 2px;
+    background: var(--accent-purple);
+    color: var(--bg-primary);
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.json-block {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    max-height: 300px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 /* Status colors */
 .status-active { color: var(--accent-cyan); }
 .status-stale { color: var(--accent-orange); }

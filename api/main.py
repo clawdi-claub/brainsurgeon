@@ -73,7 +73,10 @@ class SessionDetail(BaseModel):
     channel: Optional[str] = None
     systemPromptReport: Optional[str] = None
     resolvedSkills: list[str] = []
-    tokens: Optional[int] = None
+    tokens: Optional[int] = None  # totalTokens
+    contextTokens: Optional[int] = None
+    inputTokens: Optional[int] = None
+    outputTokens: Optional[int] = None
 
 
 class PruneRequest(BaseModel):
@@ -575,6 +578,28 @@ def get_session(agent: str, session_id: str):
             if msg.get("tool_calls"):
                 tool_calls += len(msg.get("tool_calls", []))
 
+    # Extract fields from sessions.json with correct field names
+    channel = session_meta.get("lastChannel") if session_meta else None
+    if not channel and session_meta and session_meta.get("deliveryContext"):
+        channel = session_meta["deliveryContext"].get("channel")
+    
+    system_prompt_report = session_meta.get("systemPromptReport") if session_meta else None
+    if isinstance(system_prompt_report, dict):
+        system_prompt_report = json.dumps(system_prompt_report, indent=2)
+    
+    resolved_skills = []
+    if session_meta and session_meta.get("skillsSnapshot"):
+        resolved_skills = session_meta["skillsSnapshot"].get("resolvedSkills", [])
+        # Extract just the names if it's an array of objects
+        if resolved_skills and isinstance(resolved_skills[0], dict):
+            resolved_skills = [s.get("name", "unknown") for s in resolved_skills]
+    
+    # Use totalTokens as the main token count
+    tokens = session_meta.get("totalTokens") if session_meta else None
+    context_tokens = session_meta.get("contextTokens") if session_meta else None
+    input_tokens = session_meta.get("inputTokens") if session_meta else None
+    output_tokens = session_meta.get("outputTokens") if session_meta else None
+    
     return SessionDetail(
         id=session_id,
         agent=agent,
@@ -592,10 +617,13 @@ def get_session(agent: str, session_id: str):
         models=sorted(list(models)),
         parentId=parent_id,
         children=children,
-        channel=session_meta.get("channel") if session_meta else None,
-        systemPromptReport=session_meta.get("systemPromptReport") if session_meta else None,
-        resolvedSkills=session_meta.get("resolvedSkills", []) if session_meta else [],
-        tokens=session_meta.get("tokens") if session_meta else None,
+        channel=channel,
+        systemPromptReport=system_prompt_report,
+        resolvedSkills=resolved_skills,
+        tokens=tokens,
+        contextTokens=context_tokens,
+        inputTokens=input_tokens,
+        outputTokens=output_tokens,
     )
 
 

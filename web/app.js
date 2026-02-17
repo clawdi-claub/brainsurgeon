@@ -914,8 +914,26 @@ async function viewSession(agent, id) {
         document.getElementById('metaStarted').textContent = data.created ? new Date(data.created).toLocaleString() : '—';
         document.getElementById('metaLastInteraction').textContent = data.updated ? new Date(data.updated).toLocaleString() : '—';
         document.getElementById('metaTokens').textContent = data.tokens ? data.tokens.toLocaleString() : '—';
-        document.getElementById('metaSkills').textContent = data.resolvedSkills?.join(', ') || '—';
-        document.getElementById('metaSystemPrompt').textContent = data.systemPromptReport || '—';
+        document.getElementById('metaContextTokens').textContent = data.contextTokens ? data.contextTokens.toLocaleString() : '—';
+        
+        // Show resolved skills as tags
+        const skillsEl = document.getElementById('metaSkills');
+        if (data.resolvedSkills && data.resolvedSkills.length > 0) {
+            skillsEl.innerHTML = data.resolvedSkills.map(s => `<span class="skill-tag">${escapeHtml(s)}</span>`).join(' ');
+        } else {
+            skillsEl.textContent = '—';
+        }
+        
+        // System prompt report as formatted JSON
+        const sysPromptEl = document.getElementById('metaSystemPrompt');
+        if (data.systemPromptReport) {
+            sysPromptEl.textContent = typeof data.systemPromptReport === 'string' 
+                ? data.systemPromptReport 
+                : JSON.stringify(data.systemPromptReport, null, 2);
+        } else {
+            sysPromptEl.textContent = '—';
+        }
+        
         document.getElementById('metaHistory').textContent = data.history ? JSON.stringify(data.history, null, 2) : '—';
 
         // Render body based on current view mode
