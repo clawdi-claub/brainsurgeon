@@ -69,6 +69,11 @@ class SessionDetail(BaseModel):
     models: list[str] = []
     parentId: Optional[str] = None
     children: list[dict] = []
+    # Additional metadata from sessions.json
+    channel: Optional[str] = None
+    systemPromptReport: Optional[str] = None
+    resolvedSkills: list[str] = []
+    tokens: Optional[int] = None
 
 
 class PruneRequest(BaseModel):
@@ -587,6 +592,10 @@ def get_session(agent: str, session_id: str):
         models=sorted(list(models)),
         parentId=parent_id,
         children=children,
+        channel=session_meta.get("channel") if session_meta else None,
+        systemPromptReport=session_meta.get("systemPromptReport") if session_meta else None,
+        resolvedSkills=session_meta.get("resolvedSkills", []) if session_meta else [],
+        tokens=session_meta.get("tokens") if session_meta else None,
     )
 
 

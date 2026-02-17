@@ -784,10 +784,10 @@ async function viewSession(agent, id) {
         document.getElementById('metaChannel').textContent = data.channel || '—';
         document.getElementById('metaStarted').textContent = data.created ? new Date(data.created).toLocaleString() : '—';
         document.getElementById('metaLastInteraction').textContent = data.updated ? new Date(data.updated).toLocaleString() : '—';
-        document.getElementById('metaTokens').textContent = data.tokens || '—';
+        document.getElementById('metaTokens').textContent = data.tokens ? data.tokens.toLocaleString() : '—';
         document.getElementById('metaSkills').textContent = data.resolvedSkills?.join(', ') || '—';
         document.getElementById('metaSystemPrompt').textContent = data.systemPromptReport || '—';
-        document.getElementById('metaHistory').textContent = data.history ? JSON.stringify(data.history) : '—';
+        document.getElementById('metaHistory').textContent = data.history ? JSON.stringify(data.history, null, 2) : '—';
 
         // Render body based on current view mode
         renderSessionBody(data);
