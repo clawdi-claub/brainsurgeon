@@ -387,25 +387,72 @@ async function viewSession(agent, id) {
     try {
         const r = await fetch(`${API}/sessions/${agent}/${id}`);
         const data = await r.json();
+
+        // Update header
         document.getElementById('modalTitle2').textContent = data.label || id;
-        document.getElementById('modalId').textContent = `${data.agent} • ${formatBytes(data.size)}`;
-        
-        // Show models
-        if (data.entries && data.entries.length > 0) {
-            const models = new Set();
-            data.entries.forEach(e => {
-                if (e.type === 'message') {
-                    const msg = e.message || {};
-                    if (msg.model) models.add(msg.model);
-                }
-            });
-            const modelList = Array.from(models);
-            if (modelList.length > 0) {
-                document.getElementById('modalModels').innerHTML = modelList.map(m => 
-                    `<span class="session-model">${escapeHtml(m)}</span>`
-                ).join(' ');
+        document.getElementById('modalId').textContent = id;
+
+        // Update details panel
+        document.getElementById('detailAgent').textContent = data.agent || agent;
+        document.getElementById('detailSize').textContent = formatBytes(data.size);
+        document.getElementById('detailMessages').textContent = data.messages || 0;
+        document.getElementById('detailTools').textContent = data.tool_calls || 0;
+        document.getElementById('detailDuration').textContent = formatDuration(data.duration_minutes);
+        document.getElementById('detailCreated').textContent = data.created ? new Date(data.created).toLocaleString() : '—';
+        document.getElementById('detailUpdated').textContent = data.updated ? new Date(data.updated).toLocaleString() : '—';
+        document.getElementById('detailStatus').textContent = data.is_stale ? '⭐ Stale' : '🟢 Active';
+        document.getElementById('detailStatus').className = 'detail-value ' + (data.is_stale ? 'status-stale' : 'status-active');
+
+        // Update models used
+        const models = new Set();
+        data.entries?.forEach(e => {
+            if (e.type === 'custom' && e.customType === 'model-snapshot') {
+                const modelId = e.data?.modelId || e.data?.model;
+                if (modelId) models.add(modelId);
+            } else if (e.type === 'message') {
+                const msg = e.message || {};
+                if (msg.model) models.add(msg.model);
             }
+        });
+        const modelList = Array.from(models);
+        if (modelList.length > 0) {
+            document.getElementById('detailModels').innerHTML = modelList.map(m =>
+                `<span class="session-model" style="font-family: monospace; font-size: 0.8rem;">${escapeHtml(m)}</span>`
+            ).join(' ');
+        } else {
+            document.getElementById('detailModels').innerHTML = '<span style="color: var(--text-tertiary)">—</span>';
         }
+
+        // Show models in header too
+        if (modelList.length > 0) {
+            document.getElementById('modalModels').innerHTML = modelList.slice(0, 3).map(m =>
+                `<span class="session-model">${escapeHtml(m.split('/').pop().substring(0, 20))}</span>`
+            ).join(' ');
+        }
+
+        // Parent/child relationships
+        const parentRow = document.getElementById('detailParentRow');
+        const parentEl = document.getElementById('detailParent');
+        if (data.parentId) {
+            parentRow.style.display = 'flex';
+            parentEl.innerHTML = `<a href="#" onclick="viewSession('${agent}', '${data.parentId}'); return false;">${data.parentId.substring(0, 8)}</a>`;
+        } else {
+            parentRow.style.display = 'none';
+        }
+
+        const childrenRow = document.getElementById('detailChildrenRow');
+        const childrenEl = document.getElementById('detailChildren');
+        if (data.children && data.children.length > 0) {
+            childrenRow.style.display = 'flex';
+            childrenEl.innerHTML = data.children.map(child =>
+                `<a href="#" onclick="viewSession('${agent}', '${child.sessionId}'); return false;">${child.sessionId.substring(0, 8)}</a>`
+            ).join(', ');
+        } else {
+            childrenRow.style.display = 'none';
+        }
+
+        // Store entries for editing
+        window._currentEntries = data.entries;
 
         // Group tool calls with results
         const groupedEntries = groupToolCalls(data.entries);

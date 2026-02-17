@@ -447,6 +447,78 @@ body {
     color: var(--text-tertiary);
 }
 
+/* Session Details Panel */
+.session-details-panel {
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 20px;
+}
+
+.details-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.detail-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.detail-label {
+    font-size: 0.7rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.detail-value {
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.detail-value.status-active {
+    color: var(--accent-cyan);
+}
+
+.detail-value.status-stale {
+    color: var(--accent-orange);
+}
+
+.detail-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 8px 0;
+    border-top: 1px solid var(--border);
+}
+
+.detail-row:first-of-type {
+    border-top: none;
+}
+
+.detail-row .detail-label {
+    min-width: 100px;
+    flex-shrink: 0;
+}
+
+.detail-row .detail-value {
+    flex: 1;
+}
+
+.detail-row a {
+    color: var(--accent-cyan);
+    text-decoration: none;
+    font-family: monospace;
+}
+
+.detail-row a:hover {
+    text-decoration: underline;
+}
+
 /* Status colors */
 .status-active { color: var(--accent-cyan); }
 .status-stale { color: var(--accent-orange); }

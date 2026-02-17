@@ -60,6 +60,15 @@ class SessionDetail(BaseModel):
     size: int
     raw_content: str
     entries: list[dict]
+    messages: int = 0
+    tool_calls: int = 0
+    duration_minutes: Optional[float] = None
+    is_stale: bool = False
+    created: Optional[str] = None
+    updated: Optional[str] = None
+    models: list[str] = []
+    parentId: Optional[str] = None
+    children: list[dict] = []
 
 
 class PruneRequest(BaseModel):
@@ -444,9 +453,11 @@ def get_session(agent: str, session_id: str):
 
     agent_sessions = get_agent_sessions(agent)
     label = session_id
+    session_meta = None
     for sess in agent_sessions:
         if sess.get("sessionId") == session_id:
             label = sess.get("label", session_id)
+            session_meta = sess
             break
 
     analysis = analyze_jsonl(filepath)
@@ -456,6 +467,50 @@ def get_session(agent: str, session_id: str):
         with open(filepath, "r", encoding="utf-8") as f:
             raw_content = f.read()
 
+    # Get timestamps and stale status
+    created, updated, duration_mins = get_session_timestamps(filepath)
+    is_stale = False
+    if updated:
+        try:
+            from datetime import datetime, timezone, timedelta
+            updated_dt = datetime.fromisoformat(updated.replace('Z', '+00:00'))
+            is_stale = (datetime.now(timezone.utc) - updated_dt) > timedelta(hours=24)
+        except:
+            pass
+
+    # Find parent/children relationships
+    parent_id = session_meta.get("parent_session_id") if session_meta else None
+    children = []
+    if agent_sessions:
+        for sess in agent_sessions:
+            if sess.get("parent_session_id") == session_id:
+                children.append({
+                    "sessionId": sess.get("sessionId"),
+                    "label": sess.get("label", sess.get("sessionId", "")[:8])
+                })
+
+    # Extract models from entries
+    models = set()
+    for entry in analysis.get("entries", []):
+        if entry.get("type") == "custom" and entry.get("customType") == "model-snapshot":
+            model_id = entry.get("data", {}).get("modelId") or entry.get("data", {}).get("model")
+            if model_id:
+                models.add(model_id)
+        elif entry.get("type") == "message":
+            msg_model = entry.get("message", {}).get("model")
+            if msg_model:
+                models.add(msg_model)
+
+    # Count messages and tool calls from entries
+    messages = 0
+    tool_calls = 0
+    for entry in analysis.get("entries", []):
+        if entry.get("type") == "message":
+            messages += 1
+            msg = entry.get("message", {})
+            if msg.get("tool_calls"):
+                tool_calls += len(msg.get("tool_calls", []))
+
     return SessionDetail(
         id=session_id,
         agent=agent,
@@ -464,6 +519,15 @@ def get_session(agent: str, session_id: str):
         size=analysis["size"],
         raw_content=raw_content,
         entries=analysis["entries"],
+        messages=messages,
+        tool_calls=tool_calls,
+        duration_minutes=duration_mins,
+        is_stale=is_stale,
+        created=created,
+        updated=updated,
+        models=sorted(list(models)),
+        parentId=parent_id,
+        children=children,
     )
 
 

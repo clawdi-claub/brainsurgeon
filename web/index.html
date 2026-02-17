@@ -70,6 +70,57 @@
                 </div>
                 <button class="close-x" onclick="closeViewModal()">×</button>
             </div>
+
+            <!-- Session Details Panel -->
+            <div class="session-details-panel" id="sessionDetailsPanel">
+                <div class="details-grid">
+                    <div class="detail-item">
+                        <span class="detail-label">Agent</span>
+                        <span class="detail-value" id="detailAgent">—</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Size</span>
+                        <span class="detail-value" id="detailSize">—</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Messages</span>
+                        <span class="detail-value" id="detailMessages">—</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Tool Calls</span>
+                        <span class="detail-value" id="detailTools">—</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Duration</span>
+                        <span class="detail-value" id="detailDuration">—</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Created</span>
+                        <span class="detail-value" id="detailCreated">—</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Updated</span>
+                        <span class="detail-value" id="detailUpdated">—</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Status</span>
+                        <span class="detail-value" id="detailStatus">—</span>
+                    </div>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Models Used:</span>
+                    <span class="detail-value" id="detailModels">—</span>
+                </div>
+                <div class="detail-row" id="detailParentRow" style="display: none;">
+                    <span class="detail-label">Parent:</span>
+                    <span class="detail-value" id="detailParent">—</span>
+                </div>
+                <div class="detail-row" id="detailChildrenRow" style="display: none;">
+                    <span class="detail-label">Children:</span>
+                    <span class="detail-value" id="detailChildren">—</span>
+                </div>
+            </div>
+
             <div class="modal-body" id="modalBody2">
                 <div class="loading">Loading...</div>
             </div>
