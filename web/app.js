@@ -660,7 +660,24 @@ function sortEntries(entries) {
 
 function getEntryType(entry) {
     const type = entry.type || '';
-    if (type === 'message') return 'message';
+    if (type === 'message') {
+        const msg = entry.message || {};
+        const role = msg.role || '';
+        // Check if this message contains tool calls
+        if (msg.tool_calls && msg.tool_calls.length > 0) {
+            return 'tool';
+        }
+        // Check if this is a tool result message
+        if (role === 'toolResult') {
+            return 'tool_result';
+        }
+        // Check if this message contains thinking
+        const content = msg.content;
+        if (Array.isArray(content) && content.some(c => c.type === 'thinking')) {
+            return 'thinking';
+        }
+        return 'message';
+    }
     if (type === 'tool' || type === 'toolCall') return 'tool';
     if (type === 'tool_result' || type === 'toolResult') return 'tool_result';
     if (type === 'thinking_level_change') return 'thinking';
@@ -670,22 +687,35 @@ function getEntryType(entry) {
 
 function filterGroupByType(group) {
     if (currentEntryTypeFilter === 'all') return true;
-    
+
     if (group.type === 'tool_pair') {
+        // Tool pair contains both tool call and result
         if (currentEntryTypeFilter === 'tool') return true;
         if (currentEntryTypeFilter === 'tool_result') return true;
         return false;
     }
-    
-    const entryType = getEntryType(group.entry);
-    
-    if (currentEntryTypeFilter === 'message') return entryType === 'message';
-    if (currentEntryTypeFilter === 'tool') return entryType === 'tool';
-    if (currentEntryTypeFilter === 'tool_result') return entryType === 'tool_result';
-    if (currentEntryTypeFilter === 'thinking') {
-        return entryType === 'thinking' || (entryType === 'message' && group.entry.message?.content?.some(c => c.type === 'thinking'));
+
+    const entry = group.entry;
+    const entryType = getEntryType(entry);
+
+    if (currentEntryTypeFilter === 'message') {
+        // Show only pure messages (not tool calls/results/thinking)
+        return entryType === 'message';
     }
-    if (currentEntryTypeFilter === 'custom') return entryType === 'custom';
+    if (currentEntryTypeFilter === 'tool') {
+        return entryType === 'tool';
+    }
+    if (currentEntryTypeFilter === 'tool_result') {
+        return entryType === 'tool_result';
+    }
+    if (currentEntryTypeFilter === 'thinking') {
+        return entryType === 'thinking' ||
+            (entry.type === 'thinking_level_change') ||
+            (entry.type === 'message' && entry.message?.content?.some(c => c.type === 'thinking'));
+    }
+    if (currentEntryTypeFilter === 'custom') {
+        return entryType === 'custom';
+    }
     return true;
 }
 
@@ -1012,30 +1042,29 @@ function groupToolCalls(entries) {
             // Look for the corresponding result
             let result = null;
             let resultIndex = -1;
-            
+
             for (let j = i + 1; j < entries.length; j++) {
                 const next = entries[j];
-                
+
+                // Check for standalone tool_result entries
                 if (next.type === 'tool_result') {
                     if (next.id === toolId || next.call_id === toolId) {
                         result = next;
                         resultIndex = j;
                         break;
                     }
-                } else if (next.type === 'message') {
+                }
+                // Check for tool results embedded in messages
+                else if (next.type === 'message') {
                     const msg = next.message || {};
                     if (msg.role === 'toolResult') {
-                        // Check if content references the tool id
-                        const content = msg.content;
-                        if (typeof content === 'string' && content.includes(toolId)) {
-                            result = next;
-                            resultIndex = j;
-                            break;
-                        }
+                        result = next;
+                        resultIndex = j;
+                        break;
                     }
                 }
             }
-            
+
             if (result) {
                 grouped.push({ type: 'tool_pair', call: entry, result: result, callIndex: i, resultIndex: resultIndex });
                 i = resultIndex + 1;
