@@ -609,6 +609,7 @@ def delete_session(agent: str, session_id: str):
         metadata = {
             "original_agent": agent,
             "original_session_id": session_id,
+            "original_path": str(filepath),
             "trashed_at": datetime.now(timezone.utc).isoformat(),
             "expires_at": (datetime.now(timezone.utc) + timedelta(days=TRASH_RETENTION_DAYS)).isoformat(),
         }
@@ -634,6 +635,7 @@ def delete_session(agent: str, session_id: str):
                         metadata = {
                             "original_agent": agent,
                             "original_session_id": child_sid,
+                            "original_path": str(child_path),
                             "trashed_at": datetime.now(timezone.utc).isoformat(),
                             "expires_at": (datetime.now(timezone.utc) + timedelta(days=TRASH_RETENTION_DAYS)).isoformat(),
                             "parent_session_id": session_id,
@@ -718,7 +720,7 @@ def restore_from_trash(agent: str, session_id: str):
         pass
 
     # Re-add to sessions.json if it was removed
-    sessions_file = AGENTS_DIR / agent / "sessions.json"
+    sessions_file = AGENTS_DIR / agent / "sessions" / "sessions.json"
     if sessions_file.exists():
         try:
             with open(sessions_file, "r") as f:
