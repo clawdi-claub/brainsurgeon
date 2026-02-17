@@ -555,8 +555,68 @@ def permanent_delete(agent: str, session_id: str):
         deleted = True
     for meta_file in TRASH_DIR.glob(f"{agent}_{session_id}_*.meta.json"):
         meta_file.unlink()
-    
+
     return {"deleted": deleted, "id": session_id}
+
+
+@app.post("/trash/{agent}/{session_id}/restore")
+def restore_from_trash(agent: str, session_id: str):
+    """Restore a session from trash back to active sessions."""
+    # Find the trashed session file
+    trash_files = list(TRASH_DIR.glob(f"{agent}_{session_id}_*.jsonl"))
+    if not trash_files:
+        raise HTTPException(status_code=404, detail="Session not found in trash")
+
+    trash_path = trash_files[0]
+    meta_path = trash_path.with_suffix(".meta.json")
+
+    # Read metadata
+    try:
+        with open(meta_path, "r") as f:
+            meta = json.load(f)
+        original_path = Path(meta["original_path"])
+    except:
+        # Fallback: reconstruct path from agent/session_id
+        original_path = AGENTS_DIR / agent / "sessions" / f"{session_id}.jsonl"
+
+    # Ensure directory exists
+    original_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Copy file back to original location (in case trash is owned by root)
+    shutil.copy2(str(trash_path), str(original_path))
+
+    # Try to remove from trash (may fail if owned by root)
+    try:
+        trash_path.unlink()
+        if meta_path.exists():
+            meta_path.unlink()
+    except PermissionError:
+        # File restored but couldn't clean up trash (owned by root)
+        pass
+
+    # Re-add to sessions.json if it was removed
+    sessions_file = AGENTS_DIR / agent / "sessions.json"
+    if sessions_file.exists():
+        try:
+            with open(sessions_file, "r") as f:
+                sessions = json.load(f)
+        except:
+            sessions = []
+
+        # Check if already in sessions.json
+        exists = any(s.get("sessionId") == session_id for s in sessions)
+        if not exists:
+            sessions.append({
+                "sessionId": session_id,
+                "label": session_id[:8],
+                "agentId": agent,
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+                "restored": True
+            })
+            with open(sessions_file, "w") as f:
+                json.dump(sessions, f, indent=2)
+
+    return {"restored": True, "id": session_id, "path": str(original_path)}
 
 
 @app.post("/trash/cleanup")
