@@ -694,12 +694,16 @@ function renderSessionBody(data) {
     window._currentEntries = data.entries;
     currentSessionData = data;
 
+    console.log('renderSessionBody called, entries count:', data.entries.length);
+
     // Group tool calls with results (on ORIGINAL entries in chronological order)
     let groupedEntries = groupToolCalls(data.entries);
+    console.log('After groupToolCalls, groups count:', groupedEntries.length);
     
     // Apply type filter to groups
     if (currentEntryTypeFilter !== 'all') {
         groupedEntries = groupedEntries.filter(filterGroupByType);
+        console.log('After filtering, groups count:', groupedEntries.length);
     }
     
     // Sort groups (newest first or oldest first)
@@ -718,11 +722,12 @@ function renderSessionBody(data) {
             parentToChildren[entry.parentId].push({ entry, index: idx, entryId: entry.id || entry.sessionId });
         }
     });
+    console.log('Child entry IDs:', Array.from(childEntryIds));
+    console.log('Parent to children map:', Object.keys(parentToChildren));
     
-    // Track which child indices have been rendered
-    const renderedChildIndices = new Set();
+    let renderedCount = 0;
     
-    document.getElementById('modalBody2').innerHTML = groupedEntries.map((group) => {
+    const html = groupedEntries.map((group) => {
         let entryIndex, entry;
         
         if (group.type === 'tool_pair') {
@@ -735,13 +740,15 @@ function renderSessionBody(data) {
         
         // Skip if this is a child entry that will be rendered under its parent
         if (childEntryIds.has(entryIndex)) {
+            console.log('Skipping child entry at index', entryIndex);
             return '';
         }
+        
+        renderedCount++;
         
         // Mark children of this entry as rendered
         const entryId = entry.id || entry.sessionId || entry.call_id;
         const children = parentToChildren[entryId] || [];
-        children.forEach(c => renderedChildIndices.add(c.index));
         
         if (group.type === 'tool_pair') {
             // Tool call + result pair grouped together
@@ -773,6 +780,9 @@ function renderSessionBody(data) {
             return renderEntryWithToggle(group.entry, entryIndex, data.agent, data.id);
         }
     }).join('');
+    
+    console.log('Rendered count:', renderedCount);
+    document.getElementById('modalBody2').innerHTML = html;
 }
 
 function renderEntryWithToggle(entry, index, agent, sessionId) {
@@ -954,32 +964,46 @@ async function viewSession(agent, id) {
         window._currentEntries = data.entries;
 
         // Update metadata section
+        console.log('Session data received:', data);
+        console.log('Channel:', data.channel, 'Tokens:', data.tokens, 'Skills:', data.resolvedSkills);
+        
         document.getElementById('metaSessionId').textContent = data.id;
-        document.getElementById('metaChannel').textContent = data.channel || '—';
+        const channelEl = document.getElementById('metaChannel');
+        if (channelEl) channelEl.textContent = data.channel || '—';
+        
         document.getElementById('metaStarted').textContent = data.created ? new Date(data.created).toLocaleString() : '—';
         document.getElementById('metaLastInteraction').textContent = data.updated ? new Date(data.updated).toLocaleString() : '—';
-        document.getElementById('metaTokens').textContent = data.tokens ? data.tokens.toLocaleString() : '—';
-        document.getElementById('metaContextTokens').textContent = data.contextTokens ? data.contextTokens.toLocaleString() : '—';
+        
+        const tokensEl = document.getElementById('metaTokens');
+        if (tokensEl) tokensEl.textContent = data.tokens ? data.tokens.toLocaleString() : '—';
+        
+        const contextTokensEl = document.getElementById('metaContextTokens');
+        if (contextTokensEl) contextTokensEl.textContent = data.contextTokens ? data.contextTokens.toLocaleString() : '—';
         
         // Show resolved skills as tags
         const skillsEl = document.getElementById('metaSkills');
-        if (data.resolvedSkills && data.resolvedSkills.length > 0) {
-            skillsEl.innerHTML = data.resolvedSkills.map(s => `<span class="skill-tag">${escapeHtml(s)}</span>`).join(' ');
-        } else {
-            skillsEl.textContent = '—';
+        if (skillsEl) {
+            if (data.resolvedSkills && data.resolvedSkills.length > 0) {
+                skillsEl.innerHTML = data.resolvedSkills.map(s => `<span class="skill-tag">${escapeHtml(s)}</span>`).join(' ');
+            } else {
+                skillsEl.textContent = '—';
+            }
         }
         
         // System prompt report as formatted JSON
         const sysPromptEl = document.getElementById('metaSystemPrompt');
-        if (data.systemPromptReport) {
-            sysPromptEl.textContent = typeof data.systemPromptReport === 'string' 
-                ? data.systemPromptReport 
-                : JSON.stringify(data.systemPromptReport, null, 2);
-        } else {
-            sysPromptEl.textContent = '—';
+        if (sysPromptEl) {
+            if (data.systemPromptReport) {
+                sysPromptEl.textContent = typeof data.systemPromptReport === 'string' 
+                    ? data.systemPromptReport 
+                    : JSON.stringify(data.systemPromptReport, null, 2);
+            } else {
+                sysPromptEl.textContent = '—';
+            }
         }
         
-        document.getElementById('metaHistory').textContent = data.history ? JSON.stringify(data.history, null, 2) : '—';
+        const historyEl = document.getElementById('metaHistory');
+        if (historyEl) historyEl.textContent = data.history ? JSON.stringify(data.history, null, 2) : '—';
 
         // Render body based on current view mode
         renderSessionBody(data);
