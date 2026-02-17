@@ -1,7 +1,7 @@
 name: brainsurgeon
 description: Web UI for surgical session management - browse, view, edit, prune, and delete OpenClaw sessions
 version: 1.0.0
-author: crix-claub
+author: anderslaub + friends
 
 # Extension type
 extension_type: web_service

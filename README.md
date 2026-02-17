@@ -1,20 +1,39 @@
 # BrainSurgeon 🧠
 
-OpenClaw extension for surgical session management.
+*OpenClaw extension for surgical session management.*
+
+**Author:** anderslaub + friends
 
 A web UI to browse, view, edit, prune, and delete OpenClaw agent sessions.
 
-![Features](./screenshot.png)
+![BrainSurgeon Interface](./docs/screenshots/screenshot-main.png)
+
+---
+
+## What is This?
+
+Your OpenClaw agents have been busy. They've had thousands of conversations, generated terabytes of output, and somewhere in there is that one brilliant insight you need to find again.
+
+**BrainSurgeon is your operating theater.**
+
+Browse sessions like flipping through patient charts. Prune bloated tool outputs. Delete the experiments that didn't pan out. Edit those embarrassing 3am prompts. Your agents' memories are now yours to shape.
+
+---
 
 ## Features
 
-- **Browse**: Per-agent session browser with stats (size, duration, tool calls, tokens)
-- **View**: Parsed JSONL session viewer with filtering
-- **Edit**: Modify individual session entries
-- **Prune**: Strip tool call output to reduce session size
-- **Delete**: Remove session files with optional summary generation
-- **Search**: Find sessions by label or content
-- **Stats**: Token usage, model breakdown, duration tracking
+| Feature | Description |
+|---------|-------------|
+| 🔍 **X-Ray Vision** | Browse sessions with full metadata: tokens, models, duration, channels |
+| ✂️ **Neural Pruning** | Strip massive tool outputs while keeping conversation context |
+| 🗑️ **Organ Harvesting** | Delete with trash recovery and optional autopsy reports |
+| ✏️ **Neuroplasticity** | Edit individual messages—rewrite history if you must |
+| 📊 **Vital Signs** | Token usage analytics, model breakdowns, duration tracking |
+| 🔄 **Resurrection** | Restore sessions from trash (we don't judge) |
+
+![Session Browser](./docs/screenshots/screenshot-sessions.png)
+
+---
 
 ## Quick Start
 
@@ -27,14 +46,12 @@ A web UI to browse, view, edit, prune, and delete OpenClaw agent sessions.
 ### Install as OpenClaw Extension
 
 ```bash
-# Clone or download this repository
-git clone https://github.com/yourusername/brainsurgeon.git
+# Clone the repository
+git clone https://github.com/anderslaub/brainsurgeon.git
 cd brainsurgeon
 
 # Link to OpenClaw extensions directory
 ln -s "$(pwd)" ~/.openclaw/extensions/brainsurgeon
-
-# Start the API server (see options below)
 ```
 
 ### Option 1: Run with Docker (Recommended)
@@ -43,7 +60,7 @@ ln -s "$(pwd)" ~/.openclaw/extensions/brainsurgeon
 # Build and start
 docker-compose up --build -d
 
-# Or build without cache if updating
+# Or rebuild without cache when updating
 docker-compose build --no-cache
 docker-compose up -d
 
@@ -61,56 +78,77 @@ pip install fastapi uvicorn pydantic
 
 # Run the API
 python -m uvicorn api.main:app --host 0.0.0.0 --port 8654
-
-# Or with environment variable for OpenClaw path
-OPENCLAW_ROOT=/path/to/.openclaw python -m uvicorn api.main:app --host 0.0.0.0 --port 8654
 ```
 
-### Configuration
+### Option 3: For AI Agents
 
-BrainSurgeon uses these environment variables:
+If you are an AI assistant installing this for a human:
+
+```bash
+# Clone and prepare
+git clone https://github.com/anderslaub/brainsurgeon.git ~/.openclaw/extensions/brainsurgeon
+cd ~/.openclaw/extensions/brainsurgeon
+
+# Deploy with Docker
+exec:docker-compose up --build -d
+
+# Verify installation
+exec:curl http://localhost:8654/agents
+```
+
+---
+
+## Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `OPENCLAW_ROOT` | `~/.openclaw` | Path to your OpenClaw data directory |
 | `PORT` | `8654` | Port to run the API server |
 
+---
+
 ## Usage
 
 Once running, open your browser to `http://localhost:8654`
 
 ### Session Browser
-- Select an agent from the dropdown to view their sessions
-- Sessions are sorted by most recent activity
-- Click any session to view details
+1. Select an agent from the dropdown
+2. Sessions are sorted by most recent activity
+3. Click any session to open the detail view
 
 ### Session Detail View
-- View all messages in a parsed, readable format
-- See metadata: tokens used, model, duration, channel
-- Edit individual entries by clicking the edit button
-- Prune tool outputs to reduce file size
-- Delete the session entirely
+- View all messages in parsed, readable format
+- See metadata: tokens, model, duration, channel
+- Click "Edit" to modify individual entries
+- Click "Prune" to strip tool outputs
+- Click "Delete" to send to trash
 
 ### Pruning
-Pruning removes tool call output content (keeps the calls themselves). This is useful for reducing session size while keeping conversation context.
+Pruning removes tool output content (keeps the calls). This dramatically reduces file size while preserving conversation flow. Use it when sessions get bloated from large tool responses.
 
 ### Deleting
-Deletion moves sessions to a trash folder and removes them from OpenClaw's index. Sessions can be recovered from trash within the retention period.
+Deletion moves sessions to trash and removes them from OpenClaw's index. Sessions stay in trash for 14 days before permanent deletion. Use "Restore" to recover them.
 
-## File Structure
+---
+
+## Project Structure
 
 ```
 brainsurgeon/
-├── api/              # FastAPI backend
-│   └── main.py       # Main API endpoints
-├── web/              # Static frontend
-│   ├── index.html    # Main UI
-│   └── app.js        # Frontend logic
-├── extension.yaml    # OpenClaw extension manifest
-├── Dockerfile        # Container build
-├── docker-compose.yml # Docker Compose config
-└── README.md         # This file
+├── api/
+│   └── main.py            # FastAPI backend
+├── web/
+│   ├── index.html         # Frontend UI
+│   └── app.js             # Frontend logic
+├── docs/
+│   └── screenshots/       # Documentation images
+├── extension.yaml         # OpenClaw extension manifest
+├── Dockerfile
+├── docker-compose.yml
+└── README.md
 ```
+
+---
 
 ## API Endpoints
 
@@ -124,21 +162,24 @@ brainsurgeon/
 - `GET /trash` - List trashed sessions
 - `DELETE /trash/{filename}` - Permanently delete from trash
 
-## Safety
+---
 
-- **Backup recommended**: BrainSurgeon modifies session files. Consider backing up your `~/.openclaw/agents/` directory.
-- **Undo available**: Deleted sessions go to trash and can be restored.
-- **Edit carefully**: Editing session entries modifies the underlying JSONL files.
+## Safety First
+
+- **Backup recommended**: BrainSurgeon modifies session files. Consider backing up your `~/.openclaw/agents/` directory before major operations.
+- **Undo available**: Deleted sessions go to trash and can be restored within 14 days.
+- **Edit carefully**: Editing modifies the underlying JSONL files directly.
+
+---
 
 ## Development
 
 ```bash
 # Run in development mode with auto-reload
 python -m uvicorn api.main:app --reload --port 8654
-
-# Run tests (if available)
-pytest
 ```
+
+---
 
 ## Troubleshooting
 
@@ -154,10 +195,24 @@ pytest
 - Check that the API is running: `curl http://localhost:8654/agents`
 - Verify the port isn't already in use: `lsof -i :8654`
 
+---
+
+## GitHub Pages
+
+Visit the landing page: https://anderslaub.github.io/brainsurgeon
+
+---
+
 ## License
 
-MIT
+MIT — Do what you want, but don't blame us if you accidentally delete something important.
+
+*"With great power comes great ability to accidentally delete things permanently."*
+
+---
 
 ## Contributing
 
 Issues and pull requests welcome. This is a community tool for managing OpenClaw sessions.
+
+Built with 🧠 by anderslaub + friends
