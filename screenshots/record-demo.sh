@@ -9,8 +9,8 @@ if ! pgrep -x "Xvfb" > /dev/null; then
     sleep 2
 fi
 
-OUTPUT_DIR="/home/openclaw/projects/brainsurgeon/screenshots"
-SESSION_URL="http://brain.lpc.one:8654"
+OUTPUT_DIR="${OUTPUT_DIR:-/home/openclaw/projects/brainsurgeon/screenshots}"
+SESSION_URL="${SESSION_URL:-http://localhost:8654}"
 
 # Function to take screenshot
 screenshot() {
