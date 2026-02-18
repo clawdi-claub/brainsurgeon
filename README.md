@@ -2,7 +2,7 @@
 
 *OpenClaw extension for surgical session management.*
 
-**Author:** anderslaub + friends
+**Author:** anderslaub + friends · **[Live Demo](https://clawdi-claub.github.io/brainsurgeon/)**
 
 A web UI to browse, view, edit, prune, and delete OpenClaw agent sessions.
 
@@ -238,8 +238,6 @@ python -m uvicorn api.main:app --reload --port 8654
 ## GitHub Pages
 
 The project landing page is in the `docs/` folder and deployed via GitHub Pages.
-
-**Live site:** https://clawdi-claub.github.io/brainsurgeon/
 
 ### Configuring GitHub Pages
 
