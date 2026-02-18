@@ -1396,6 +1396,37 @@ document.getElementById('trashModal').onclick = (e) => {
 loadAgents();
 loadSessions();
 
+// Show API key required banner if loading fails
+function showApiKeyBanner(show) {
+    const banner = document.getElementById('apiKeyBanner');
+    if (banner) {
+        banner.style.display = show ? 'flex' : 'none';
+    }
+}
+
+// Check if API requires authentication
+async function checkApiAuth() {
+    try {
+        const r = await fetch(`${API}/agents`);
+        if (r.status === 403) {
+            showApiKeyBanner(true);
+            // Clear the grid and show auth required state
+            document.getElementById('sessionGrid').innerHTML = `
+                <div class="loading" style="color: var(--text-secondary);">
+                    🔒 Enter API key above to view sessions
+                </div>
+            `;
+            return false;
+        } else if (r.ok) {
+            showApiKeyBanner(false);
+            return true;
+        }
+    } catch (e) {
+        console.log('Auth check failed:', e);
+    }
+    return null;
+}
+
 // API Key input handling
 document.addEventListener('DOMContentLoaded', () => {
     const apiKeyInput = document.getElementById('apiKeyInput');
@@ -1403,14 +1434,35 @@ document.addEventListener('DOMContentLoaded', () => {
         // Load saved API key
         apiKeyInput.value = getApiKey();
         
-        // Save API key on change
-        apiKeyInput.addEventListener('change', (e) => {
-            setApiKey(e.target.value.trim());
+        // Check if auth is required on initial load
+        checkApiAuth();
+        
+        // Handle Enter key - save and refresh
+        apiKeyInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const key = e.target.value.trim();
+                setApiKey(key);
+                if (key) {
+                    showApiKeyBanner(false);
+                    location.reload(); // Refresh page to reload data with new key
+                }
+            }
         });
         
-        // Also save on blur (lose focus)
+        // Handle blur (lose focus) - save and refresh if key changed
         apiKeyInput.addEventListener('blur', (e) => {
-            setApiKey(e.target.value.trim());
+            const newKey = e.target.value.trim();
+            const oldKey = getApiKey();
+            if (newKey !== oldKey) {
+                setApiKey(newKey);
+                if (newKey) {
+                    showApiKeyBanner(false);
+                    location.reload(); // Refresh page to reload data with new key
+                } else {
+                    // Key cleared - check if auth is still required
+                    checkApiAuth();
+                }
+            }
         });
     }
 });

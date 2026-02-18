@@ -70,6 +70,40 @@ body {
 .api-key-input::placeholder {
     color: var(--text-tertiary);
 }
+
+/* API Key Required Banner */
+.api-key-banner {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.05));
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin: 16px 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.8; }
+}
+
+.api-key-banner .api-key-icon {
+    font-size: 1.2rem;
+}
+
+.api-key-banner .api-key-text {
+    color: #ff6b6b;
+    font-size: 0.95rem;
+    font-weight: 500;
+}
+
+/* API key input styling when auth required */
+.api-key-input:placeholder-shown {
+    border-color: rgba(239, 68, 68, 0.5);
+    background: rgba(239, 68, 68, 0.05);
+}
 }
 
 .filter-group {
