@@ -4,6 +4,35 @@ let currentAgent = 'all';
 let currentStatusFilter = 'all';
 let currentTypeFilter = 'all';
 
+// API Key configuration (set via localStorage or input field)
+function getApiKey() {
+    return localStorage.getItem('brainsurgeon_api_key') || '';
+}
+
+function setApiKey(key) {
+    if (key) {
+        localStorage.setItem('brainsurgeon_api_key', key);
+    } else {
+        localStorage.removeItem('brainsurgeon_api_key');
+    }
+}
+
+// Helper to make authenticated API requests
+function apiRequest(url, options = {}) {
+    const headers = {
+        'Content-Type': 'application/json',
+        ...options.headers
+    };
+    const apiKey = getApiKey();
+    if (apiKey) {
+        headers['X-API-Key'] = apiKey;
+    }
+    return fetch(url, {
+        ...options,
+        headers
+    });
+}
+
 // Format helpers
 function formatBytes(bytes) {
     if (bytes === 0) return '0 B';
@@ -80,9 +109,8 @@ async function confirmRestart() {
     showCustomModal('Restarting...', bodyHtml, '');
     
     try {
-        const r = await fetch(`${API}/restart`, {
+        const r = await apiRequest(`${API}/restart`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({delay_ms: delay, note: "Restart triggered from BrainSurgeon"})
         });
         
@@ -121,7 +149,7 @@ async function confirmRestart() {
 
 async function loadAgents() {
     try {
-        const r = await fetch(`${API}/agents`);
+        const r = await apiRequest(`${API}/agents`);
         const data = await r.json();
         const filter = document.getElementById('agentFilter');
         filter.innerHTML = '<button class="agent-btn active" data-agent="all">All</button>';
@@ -157,7 +185,7 @@ function updateTypeFilter(agents) {
 async function loadSessions() {
     try {
         const url = currentAgent === 'all' ? `${API}/sessions` : `${API}/sessions?agent=${currentAgent}`;
-        const r = await fetch(url);
+        const r = await apiRequest(url);
         const data = await r.json();
         sessions = data.sessions;
         renderSessions();
@@ -170,7 +198,7 @@ async function loadSessions() {
 
 async function loadTrashCount() {
     try {
-        const r = await fetch(`${API}/trash`);
+        const r = await apiRequest(`${API}/trash`);
         const data = await r.json();
         document.getElementById('statTrash').textContent = data.sessions.length;
     } catch (e) {
@@ -309,9 +337,8 @@ async function confirmPrune(agent, id) {
     closeCustomModal();
     
     try {
-        const r = await fetch(`${API}/sessions/${agent}/${id}/prune`, {
+        const r = await apiRequest(`${API}/sessions/${agent}/${id}/prune`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({keep_recent: keepRecent})
         });
         const data = await r.json();
@@ -343,7 +370,7 @@ async function showDeleteDialog(agent, id, label) {
     // Fetch summary
     let summaryData = null;
     try {
-        const r = await fetch(`${API}/sessions/${agent}/${id}/summary`);
+        const r = await apiRequest(`${API}/sessions/${agent}/${id}/summary`);
         if (r.ok) {
             summaryData = await r.json();
         }
@@ -464,9 +491,9 @@ async function showDeleteDialog(agent, id, label) {
 
 async function confirmDelete(agent, id) {
     closeCustomModal();
-    
+
     try {
-        await fetch(`${API}/sessions/${agent}/${id}`, { method: 'DELETE' });
+        await apiRequest(`${API}/sessions/${agent}/${id}`, { method: 'DELETE' });
         loadSessions();
     } catch (e) {
         alert('Delete failed');
@@ -922,7 +949,7 @@ function startAutoRefresh(agent, id) {
         }
         
         try {
-            const r = await fetch(`${API}/sessions/${agent}/${id}`);
+            const r = await apiRequest(`${API}/sessions/${agent}/${id}`);
             if (!r.ok) return;
             const data = await r.json();
             
@@ -971,7 +998,7 @@ async function viewSession(agent, id) {
     setTimeout(setupScrollTracking, 100);
 
     try {
-        const r = await fetch(`${API}/sessions/${agent}/${id}`);
+        const r = await apiRequest(`${API}/sessions/${agent}/${id}`);
         const data = await r.json();
 
         // Update header
@@ -1223,15 +1250,14 @@ function getEntryAtIndex(index) {
 
 async function saveEntry(agent, sessionId, index) {
     const content = document.getElementById('editEntryContent').value;
-    
+
     try {
         const entry = JSON.parse(content);
-        const r = await fetch(`${API}/sessions/${agent}/${sessionId}/entries/${index}`, {
+        const r = await apiRequest(`${API}/sessions/${agent}/${sessionId}/entries/${index}`, {
             method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ index: index, entry: entry })
         });
-        
+
         if (r.ok) {
             closeCustomModal();
             viewSession(agent, sessionId); // Refresh
@@ -1246,20 +1272,19 @@ async function saveEntry(agent, sessionId, index) {
 // Delete single entry
 async function deleteEntry(agent, sessionId, index) {
     if (!confirm(`Delete entry #${index}?`)) return;
-    
+
     // For now, we'll just truncate the content
     // Full delete would require re-writing the file
     try {
         const entry = getEntryAtIndex(index);
         entry._deleted = true;
         entry.content = '[deleted]';
-        
-        await fetch(`${API}/sessions/${agent}/${sessionId}/entries/${index}`, {
+
+        await apiRequest(`${API}/sessions/${agent}/${sessionId}/entries/${index}`, {
             method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ index: index, entry: entry })
         });
-        
+
         viewSession(agent, sessionId);
     } catch (e) {
         alert('Failed to delete entry');
@@ -1292,9 +1317,9 @@ function closeTrashModal() {
 async function loadTrashSessions() {
     const body = document.getElementById('trashBody');
     body.innerHTML = '<div class="loading">Loading trashed sessions...</div>';
-    
+
     try {
-        const r = await fetch(`${API}/trash`);
+        const r = await apiRequest(`${API}/trash`);
         const data = await r.json();
         
         if (!data.sessions || data.sessions.length === 0) {
@@ -1333,9 +1358,9 @@ async function loadTrashSessions() {
 
 async function restoreSession(agent, sessionId) {
     if (!confirm(`Restore session ${sessionId}?`)) return;
-    
+
     try {
-        const r = await fetch(`${API}/trash/${agent}/${sessionId}/restore`, { method: 'POST' });
+        const r = await apiRequest(`${API}/trash/${agent}/${sessionId}/restore`, { method: 'POST' });
         if (r.ok) {
             loadTrashSessions();
             loadSessions();
@@ -1349,9 +1374,9 @@ async function restoreSession(agent, sessionId) {
 
 async function permanentDeleteSession(agent, sessionId) {
     if (!confirm(`Permanently delete session ${sessionId}? This cannot be undone.`)) return;
-    
+
     try {
-        const r = await fetch(`${API}/trash/${agent}/${sessionId}`, { method: 'DELETE' });
+        const r = await apiRequest(`${API}/trash/${agent}/${sessionId}`, { method: 'DELETE' });
         if (r.ok) {
             loadTrashSessions();
             loadTrashCount();
@@ -1370,3 +1395,22 @@ document.getElementById('trashModal').onclick = (e) => {
 // Initial load
 loadAgents();
 loadSessions();
+
+// API Key input handling
+document.addEventListener('DOMContentLoaded', () => {
+    const apiKeyInput = document.getElementById('apiKeyInput');
+    if (apiKeyInput) {
+        // Load saved API key
+        apiKeyInput.value = getApiKey();
+        
+        // Save API key on change
+        apiKeyInput.addEventListener('change', (e) => {
+            setApiKey(e.target.value.trim());
+        });
+        
+        // Also save on blur (lose focus)
+        apiKeyInput.addEventListener('blur', (e) => {
+            setApiKey(e.target.value.trim());
+        });
+    }
+});
