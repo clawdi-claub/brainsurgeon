@@ -50,6 +50,28 @@ body {
     flex-wrap: wrap;
 }
 
+.api-key-input {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    width: 160px;
+    transition: all 0.2s;
+}
+
+.api-key-input:focus {
+    outline: none;
+    border-color: var(--accent-cyan);
+    width: 200px;
+}
+
+.api-key-input::placeholder {
+    color: var(--text-tertiary);
+}
+}
+
 .filter-group {
     display: flex;
     gap: 8px;

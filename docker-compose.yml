@@ -8,4 +8,11 @@ services:
       - ${OPENCLAW_ROOT:-~/.openclaw}:/data/openclaw:rw
     environment:
       - OPENCLAW_ROOT=/data/openclaw
+      # Security: Set API keys (comma-separated) to require authentication
+      # Leave empty for local development (no auth required)
+      - BRAINSURGEON_API_KEYS=${BRAINSURGEON_API_KEYS:-}
+      # Security: Set to 'true' for read-only mode (no delete/edit/prune)
+      - BRAINSURGEON_READONLY=${BRAINSURGEON_READONLY:-false}
+      # Security: CORS origins (comma-separated)
+      - BRAINSURGEON_CORS_ORIGINS=${BRAINSURGEON_CORS_ORIGINS:-http://localhost:8654,http://127.0.0.1:8654}
     restart: unless-stopped
