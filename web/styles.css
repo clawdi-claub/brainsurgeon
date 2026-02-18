@@ -771,12 +771,26 @@ body {
 }
 
 /* Entry View Toggle */
+.entry {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 8px;
+    font-family: monospace;
+    font-size: 0.8rem;
+    overflow-x: hidden;
+    max-width: 100%;
+}
+
 .entry-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 8px 12px;
     background: var(--bg-hover);
+    flex-wrap: wrap;
+    gap: 4px;
     border-radius: 4px 4px 0 0;
 }
 
@@ -1286,8 +1300,33 @@ body {
     #viewModal .modal-body {
         flex: 1 1 auto;
         overflow-y: auto;
+        overflow-x: hidden;
         min-height: 0;
         padding: 12px 16px;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Prevent horizontal overflow in entries */
+    #viewModal .modal-body * {
+        max-width: 100%;
+    }
+
+    /* Ensure text wraps properly */
+    #viewModal .modal-body .content-text,
+    #viewModal .modal-body .raw-json-view,
+    #viewModal .modal-body pre,
+    #viewModal .modal-body code {
+        overflow-x: hidden;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        white-space: pre-wrap;
+    }
+
+    /* Fix for long URLs/strings breaking layout */
+    #viewModal .modal-body .kv-string,
+    #viewModal .modal-body .kv-multiline {
+        word-break: break-word;
+        overflow-wrap: anywhere;
     }
 
     /* Entry styling adjustments */
