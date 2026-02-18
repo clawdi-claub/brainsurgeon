@@ -1,15 +1,21 @@
 """BrainSurgeon API - Session management for OpenClaw."""
 
 import json
+import logging
 import os
+import re
 import shutil
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request, Security, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # Configuration - OpenClaw agents directory
 OPENCLAW_ROOT = Path(os.environ.get("OPENCLAW_ROOT", "~/.openclaw")).expanduser()
@@ -17,13 +23,97 @@ AGENTS_DIR = OPENCLAW_ROOT / "agents"
 TRASH_DIR = OPENCLAW_ROOT / "trash"
 TRASH_RETENTION_DAYS = 14
 
-app = FastAPI(title="BrainSurgeon", version="1.1.0")
+# Security Configuration
+API_KEYS = set(filter(None, os.environ.get("BRAINSURGEON_API_KEYS", "").split(",")))
+READONLY_MODE = os.environ.get("BRAINSURGEON_READONLY", "false").lower() == "true"
+CORS_ORIGINS = os.environ.get("BRAINSURGEON_CORS_ORIGINS", "http://localhost:8654,http://127.0.0.1:8654").split(",")
+API_KEY_NAME = "X-API-Key"
 
+# Setup audit logging
+audit_logger = logging.getLogger("brainsurgeon.audit")
+if not audit_logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s - AUDIT - %(message)s'))
+    audit_logger.addHandler(handler)
+    audit_logger.setLevel(logging.INFO)
+
+# Setup rate limiter
+limiter = Limiter(key_func=get_remote_address)
+
+app = FastAPI(title="BrainSurgeon", version="1.2.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# API Key security
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+
+async def verify_api_key(api_key: str = Security(api_key_header)):
+    """Verify API key if authentication is configured."""
+    if not API_KEYS:
+        # No API keys configured, allow all (for development/local use)
+        return None
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"API key required. Pass {API_KEY_NAME} header."
+        )
+    if api_key not in API_KEYS:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid API key"
+        )
+    return api_key
+
+def require_write_access(api_key: str = Depends(verify_api_key)):
+    """Check if server is in read-only mode."""
+    if READONLY_MODE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Server is in read-only mode"
+        )
+    return api_key
+
+def sanitize_path_component(value: str, field_name: str = "value") -> str:
+    """Sanitize path component to prevent path traversal attacks.
+    
+    Only allows alphanumeric characters, hyphens, and underscores.
+    """
+    if not value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{field_name} cannot be empty"
+        )
+    # Allow alphanumeric, hyphens, underscores only
+    if not re.match(r'^[a-zA-Z0-9_-]+$', value):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid {field_name}. Only alphanumeric, hyphens, and underscores allowed."
+        )
+    # Double-check no path separators slipped through
+    if any(c in value for c in ['/', '\\', '.', '\x00']):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid characters in {field_name}"
+        )
+    return value
+
+def log_action(action: str, agent: str, session_id: str = None, user: str = None, details: dict = None):
+    """Log audit event for destructive operations."""
+    msg = f"action={action} agent={agent}"
+    if session_id:
+        msg += f" session={session_id}"
+    if user:
+        msg += f" user={user[:8]}..."  # Truncate for privacy
+    if details:
+        msg += f" details={json.dumps(details)}"
+    audit_logger.info(msg)
+
+# CORS - locked down to specific origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -222,15 +312,19 @@ def get_session_timestamps(filepath: Path) -> tuple[Optional[str], Optional[str]
 
 
 @app.get("/agents")
-def list_agents():
+@limiter.limit("60/minute")
+def list_agents(request: Request, api_key: str = Depends(verify_api_key)):
     """List all agents with sessions."""
     return {"agents": get_agents()}
 
 
 @app.post("/restart")
-def restart_openclaw(req: RestartRequest):
+@limiter.limit("5/minute")
+def restart_openclaw(request: Request, req: RestartRequest, api_key: str = Depends(require_write_access)):
     """Trigger OpenClaw gateway restart."""
     import shutil
+
+    log_action("restart", "system", user=api_key, details={"delay_ms": req.delay_ms})
 
     # Check if openclaw is available
     openclaw_path = shutil.which("openclaw")
@@ -274,10 +368,15 @@ def restart_openclaw(req: RestartRequest):
 
 
 @app.get("/sessions", response_model=SessionList)
-def list_sessions(agent: Optional[str] = None):
+@limiter.limit("60/minute")
+def list_sessions(request: Request, agent: Optional[str] = None, api_key: str = Depends(verify_api_key)):
     """List sessions, optionally filtered by agent."""
     sessions = []
     total_size = 0
+
+    # Sanitize agent parameter if provided
+    if agent:
+        agent = sanitize_path_component(agent, "agent")
 
     agents_to_check = [agent] if agent else get_agents()
 
@@ -535,8 +634,12 @@ def generate_session_summary(entries: list[dict]) -> dict:
 
 
 @app.get("/sessions/{agent}/{session_id}/summary")
-def get_session_summary(agent: str, session_id: str):
+@limiter.limit("30/minute")
+def get_session_summary(request: Request, agent: str, session_id: str, api_key: str = Depends(verify_api_key)):
     """Generate a summary of a session before deletion."""
+    agent = sanitize_path_component(agent, "agent")
+    session_id = sanitize_path_component(session_id, "session_id")
+
     filepath = AGENTS_DIR / agent / "sessions" / f"{session_id}.jsonl"
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="Session not found")
@@ -563,8 +666,12 @@ def get_session_summary(agent: str, session_id: str):
 
 
 @app.get("/sessions/{agent}/{session_id}", response_model=SessionDetail)
-def get_session(agent: str, session_id: str):
+@limiter.limit("60/minute")
+def get_session(request: Request, agent: str, session_id: str, api_key: str = Depends(verify_api_key)):
     """Get full session details."""
+    agent = sanitize_path_component(agent, "agent")
+    session_id = sanitize_path_component(session_id, "session_id")
+
     filepath = AGENTS_DIR / agent / "sessions" / f"{session_id}.jsonl"
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="Session not found")
@@ -687,10 +794,16 @@ def get_session(agent: str, session_id: str):
 
 
 @app.delete("/sessions/{agent}/{session_id}")
-def delete_session(agent: str, session_id: str):
+@limiter.limit("30/minute")
+def delete_session(request: Request, agent: str, session_id: str, api_key: str = Depends(require_write_access)):
     """Move session to trash instead of permanent delete. Also deletes child sessions."""
+    agent = sanitize_path_component(agent, "agent")
+    session_id = sanitize_path_component(session_id, "session_id")
+
     filepath = AGENTS_DIR / agent / "sessions" / f"{session_id}.jsonl"
     sessions_file = AGENTS_DIR / agent / "sessions" / "sessions.json"
+
+    log_action("delete", agent, session_id, user=api_key)
 
     # Create trash directory if needed
     TRASH_DIR.mkdir(parents=True, exist_ok=True)
@@ -749,11 +862,12 @@ def delete_session(agent: str, session_id: str):
 
 
 @app.get("/trash")
-def list_trash():
+@limiter.limit("60/minute")
+def list_trash(request: Request, api_key: str = Depends(verify_api_key)):
     """List sessions in trash."""
     if not TRASH_DIR.exists():
         return {"sessions": []}
-    
+
     sessions = []
     for meta_file in TRASH_DIR.glob("*.meta.json"):
         try:
@@ -762,13 +876,18 @@ def list_trash():
             sessions.append(meta)
         except:
             continue
-    
+
     return {"sessions": sorted(sessions, key=lambda s: s.get("trashed_at", ""), reverse=True)}
 
 
 @app.delete("/trash/{agent}/{session_id}")
-def permanent_delete(agent: str, session_id: str):
+@limiter.limit("30/minute")
+def permanent_delete(request: Request, agent: str, session_id: str, api_key: str = Depends(require_write_access)):
     """Permanently delete a session from trash."""
+    agent = sanitize_path_component(agent, "agent")
+    session_id = sanitize_path_component(session_id, "session_id")
+
+    log_action("permanent_delete", agent, session_id, user=api_key)
     # Find matching files in trash
     deleted = False
     for trash_file in TRASH_DIR.glob(f"{agent}_{session_id}_*.jsonl"):
@@ -781,8 +900,14 @@ def permanent_delete(agent: str, session_id: str):
 
 
 @app.post("/trash/{agent}/{session_id}/restore")
-def restore_from_trash(agent: str, session_id: str):
+@limiter.limit("30/minute")
+def restore_from_trash(request: Request, agent: str, session_id: str, api_key: str = Depends(require_write_access)):
     """Restore a session from trash back to active sessions."""
+    agent = sanitize_path_component(agent, "agent")
+    session_id = sanitize_path_component(session_id, "session_id")
+
+    log_action("restore", agent, session_id, user=api_key)
+
     # Find the trashed session file
     trash_files = list(TRASH_DIR.glob(f"{agent}_{session_id}_*.jsonl"))
     if not trash_files:
@@ -841,14 +966,17 @@ def restore_from_trash(agent: str, session_id: str):
 
 
 @app.post("/trash/cleanup")
-def cleanup_trash():
+@limiter.limit("10/minute")
+def cleanup_trash(request: Request, api_key: str = Depends(require_write_access)):
     """Delete expired items from trash."""
+    log_action("cleanup_trash", "system", user=api_key)
+
     if not TRASH_DIR.exists():
         return {"cleaned": 0}
-    
+
     now = datetime.now(timezone.utc)
     cleaned = 0
-    
+
     for meta_file in TRASH_DIR.glob("*.meta.json"):
         try:
             with open(meta_file, "r") as f:
@@ -863,13 +991,19 @@ def cleanup_trash():
                 cleaned += 1
         except:
             continue
-    
+
     return {"cleaned": cleaned}
 
 
 @app.post("/sessions/{agent}/{session_id}/prune")
-def prune_session(agent: str, session_id: str, req: PruneRequest):
+@limiter.limit("30/minute")
+def prune_session(request: Request, agent: str, session_id: str, req: PruneRequest, api_key: str = Depends(require_write_access)):
     """Prune tool call output, replacing with [pruned]. Also supports light prune for long responses."""
+    agent = sanitize_path_component(agent, "agent")
+    session_id = sanitize_path_component(session_id, "session_id")
+
+    log_action("prune", agent, session_id, user=api_key, details={"keep_recent": req.keep_recent})
+
     filepath = AGENTS_DIR / agent / "sessions" / f"{session_id}.jsonl"
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="Session not found")
@@ -1009,8 +1143,14 @@ def prune_session(agent: str, session_id: str, req: PruneRequest):
 
 
 @app.put("/sessions/{agent}/{session_id}/entries/{index}")
-def edit_entry(agent: str, session_id: str, index: int, req: EditEntryRequest):
+@limiter.limit("60/minute")
+def edit_entry(request: Request, agent: str, session_id: str, index: int, req: EditEntryRequest, api_key: str = Depends(require_write_access)):
     """Edit a specific session entry."""
+    agent = sanitize_path_component(agent, "agent")
+    session_id = sanitize_path_component(session_id, "session_id")
+
+    log_action("edit_entry", agent, session_id, user=api_key, details={"index": index})
+
     filepath = AGENTS_DIR / agent / "sessions" / f"{session_id}.jsonl"
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="Session not found")

@@ -111,6 +111,34 @@ exec:curl http://localhost:8654/agents
 | `OPENCLAW_ROOT` | `~/.openclaw` | Path to your OpenClaw data directory |
 | `PORT` | `8654` | Port to run the API server |
 
+### Security
+
+**⚠️ IMPORTANT:** By default, BrainSurgeon runs with **no authentication** (suitable for local development only). For production or shared environments, configure these security options:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BRAINSURGEON_API_KEYS` | *(empty)* | Comma-separated list of API keys. When set, all requests must include `X-API-Key` header. |
+| `BRAINSURGEON_READONLY` | `false` | Set to `true` to disable all destructive operations (delete, edit, prune). |
+| `BRAINSURGEON_CORS_ORIGINS` | `http://localhost:8654,http://127.0.0.1:8654` | Comma-separated list of allowed CORS origins. Lock this down to your domain. |
+
+**Example with authentication:**
+```bash
+# Set API keys (generate strong random keys)
+export BRAINSURGEON_API_KEYS="bs_live_$(openssl rand -hex 32),bs_backup_$(openssl rand -hex 32)"
+
+# Run with Docker
+docker-compose up -d
+
+# API requests now require the key
+curl -H "X-API-Key: bs_live_..." http://localhost:8654/agents
+```
+
+**Path traversal protection:** Agent names and session IDs are validated to prevent `../` attacks. Only alphanumeric characters, hyphens, and underscores are allowed.
+
+**Rate limiting:** All endpoints have per-IP rate limits (30-60 requests per minute for most endpoints, stricter for destructive operations).
+
+**Audit logging:** All destructive operations (delete, edit, prune, restore) are logged to stderr with action, agent, session, and truncated API key.
+
 ### Nginx (Reverse Proxy)
 
 When using nginx as a reverse proxy, copy `nginx.conf.template` to `nginx.conf` and set these environment variables:

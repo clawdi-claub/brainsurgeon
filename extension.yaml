@@ -1,6 +1,6 @@
 name: brainsurgeon
 description: Web UI for surgical session management - browse, view, edit, prune, and delete OpenClaw sessions
-version: 1.0.0
+version: 1.2.0
 author: anderslaub + friends
 
 # Extension type
@@ -31,3 +31,14 @@ dependencies:
     - fastapi
     - uvicorn
     - pydantic
+    - slowapi
+
+# Security configuration
+security:
+  # API key authentication (optional but recommended)
+  api_key_header: X-API-Key
+  # Environment variables for configuration
+  env_vars:
+    - BRAINSURGEON_API_KEYS      # Comma-separated API keys
+    - BRAINSURGEON_READONLY      # Set to 'true' for read-only mode
+    - BRAINSURGEON_CORS_ORIGINS  # Allowed CORS origins
