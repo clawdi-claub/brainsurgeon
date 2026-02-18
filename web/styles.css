@@ -111,6 +111,12 @@ body {
     gap: 8px;
 }
 
+.filter-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
 .filter-select {
     padding: 6px 12px;
     border-radius: 6px;
@@ -124,6 +130,43 @@ body {
 .filter-select:hover {
     border-color: var(--accent-cyan);
     color: var(--text-primary);
+}
+
+/* Session ID container */
+.session-id-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+.session-id-text {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.clipboard-btn {
+    background: none;
+    border: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.15s;
+}
+
+.clipboard-btn:hover {
+    color: var(--accent-cyan);
+    background: var(--bg-hover);
+}
+
+.clipboard-btn.copied {
+    color: var(--accent-green);
 }
 
 .agent-filter {
@@ -260,6 +303,42 @@ body {
     color: var(--text-tertiary);
 }
 
+.session-id-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+.session-id-text {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.clipboard-btn {
+    background: none;
+    border: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.15s;
+}
+
+.clipboard-btn:hover {
+    color: var(--accent-cyan);
+    background: var(--bg-hover);
+}
+
+.clipboard-btn.copied {
+    color: var(--accent-green);
+}
+
 .session-label {
     font-size: 0.9rem;
     font-weight: 600;
@@ -283,6 +362,11 @@ body {
     color: #000;
     margin-left: 4px;
     font-weight: 600;
+}
+
+.session-model.inactive {
+    background: var(--text-tertiary);
+    color: var(--bg-primary);
 }
 
 .session-flow {
@@ -1406,6 +1490,33 @@ body {
     /* Auto-refresh indicator smaller */
     .auto-refresh-indicator {
         font-size: 0.7rem;
+    }
+
+    /* Filter items grouping */
+    .filter-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .filter-label {
+        font-size: 0.75rem;
+        white-space: nowrap;
+    }
+
+    /* Session ID and clipboard */
+    .session-id-container {
+        margin-top: 4px;
+    }
+
+    .session-id-text {
+        font-size: 0.7rem;
+        max-width: 150px;
+    }
+
+    .clipboard-btn {
+        font-size: 0.8rem;
+        padding: 2px 4px;
     }
 }
 

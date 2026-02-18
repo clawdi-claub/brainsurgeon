@@ -512,6 +512,46 @@ function isMobile() {
     return window.innerWidth <= 768;
 }
 
+function copySessionId() {
+    const fullId = window._currentSessionId;
+    if (!fullId) return;
+    
+    navigator.clipboard.writeText(fullId).then(() => {
+        const btn = document.getElementById('modalIdCopyBtn');
+        if (btn) {
+            btn.classList.add('copied');
+            btn.textContent = '✓';
+            setTimeout(() => {
+                btn.classList.remove('copied');
+                btn.textContent = '📋';
+            }, 1500);
+        }
+    }).catch(err => {
+        // Fallback for older browsers
+        const textarea = document.createElement('textarea');
+        textarea.value = fullId;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            const btn = document.getElementById('modalIdCopyBtn');
+            if (btn) {
+                btn.classList.add('copied');
+                btn.textContent = '✓';
+                setTimeout(() => {
+                    btn.classList.remove('copied');
+                    btn.textContent = '📋';
+                }, 1500);
+            }
+        } catch (e) {
+            console.error('Copy failed:', e);
+        }
+        document.body.removeChild(textarea);
+    });
+}
+
 // View mode state for each entry
 const entryViewModes = {};
 
@@ -992,9 +1032,16 @@ async function viewSession(agent, id) {
     stopAutoRefresh();
     currentViewSession = { agent, id };
     
+    // Store full ID for clipboard copy
+    window._currentSessionId = id;
+    
     document.getElementById('viewModal').classList.add('active');
     document.getElementById('modalTitle2').textContent = 'Loading...';
-    document.getElementById('modalId').textContent = id;
+    
+    // Set truncated session ID with ellipsis
+    const truncatedId = id.length > 20 ? id.substring(0, 8) + '...' + id.substring(id.length - 4) : id;
+    document.getElementById('modalId').textContent = truncatedId;
+    document.getElementById('modalId').title = id; // Full ID on hover
     document.getElementById('modalModels').textContent = '';
     document.getElementById('modalBody2').innerHTML = '<div class="loading">Loading...</div>';
     
@@ -1028,31 +1075,46 @@ async function viewSession(agent, id) {
         document.getElementById('detailStatus').textContent = data.is_stale ? '⭐ Stale' : '🟢 Active';
         document.getElementById('detailStatus').className = 'detail-value ' + (data.is_stale ? 'status-stale' : 'status-active');
 
-        // Update models used
-        const models = new Set();
+        // Update models used - only active model is green
+        const models = [];
+        const modelSet = new Set();
         data.entries?.forEach(e => {
             if (e.type === 'custom' && e.customType === 'model-snapshot') {
                 const modelId = e.data?.modelId || e.data?.model;
-                if (modelId) models.add(modelId);
+                if (modelId && !modelSet.has(modelId)) {
+                    modelSet.add(modelId);
+                    models.push(modelId);
+                }
             } else if (e.type === 'message') {
                 const msg = e.message || {};
-                if (msg.model) models.add(msg.model);
+                if (msg.model && !modelSet.has(msg.model)) {
+                    modelSet.add(msg.model);
+                    models.push(msg.model);
+                }
             }
         });
-        const modelList = Array.from(models);
-        if (modelList.length > 0) {
-            document.getElementById('detailModels').innerHTML = modelList.map(m =>
-                `<span class="session-model" style="font-family: monospace; font-size: 0.8rem;">${escapeHtml(m)}</span>`
-            ).join(' ');
+        
+        if (models.length > 0) {
+            // Last model is the active one
+            const activeModel = models[models.length - 1];
+            document.getElementById('detailModels').innerHTML = models.map((m, idx) => {
+                const isActive = idx === models.length - 1;
+                const className = isActive ? 'session-model' : 'session-model inactive';
+                return `<span class="${className}" style="font-family: monospace; font-size: 0.8rem;">${escapeHtml(m)}</span>`;
+            }).join(' ');
         } else {
             document.getElementById('detailModels').innerHTML = '<span style="color: var(--text-tertiary)">—</span>';
         }
 
-        // Show models in header too
-        if (modelList.length > 0) {
-            document.getElementById('modalModels').innerHTML = modelList.slice(0, 3).map(m =>
-                `<span class="session-model">${escapeHtml(m.split('/').pop().substring(0, 20))}</span>`
-            ).join(' ');
+        // Show models in header too - only active is green
+        if (models.length > 0) {
+            const activeModel = models[models.length - 1];
+            document.getElementById('modalModels').innerHTML = models.slice(-3).map((m, idx) => {
+                const isActive = idx === models.length - 1 || (models.length > 3 && idx === 2);
+                const className = isActive ? 'session-model' : 'session-model inactive';
+                const displayModel = m.split('/').pop().substring(0, 20);
+                return `<span class="${className}">${escapeHtml(displayModel)}</span>`;
+            }).join(' ');
         }
 
         // Parent/child relationships

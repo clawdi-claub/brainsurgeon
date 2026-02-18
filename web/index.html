@@ -89,7 +89,10 @@
             <div class="modal-head">
                 <div>
                     <div id="modalTitle2">Session</div>
-                    <div class="session-id" id="modalId"></div>
+                    <div class="session-id-container" id="modalIdContainer">
+                        <span class="session-id-text" id="modalId"></span>
+                        <button class="clipboard-btn" id="modalIdCopyBtn" onclick="copySessionId()" title="Copy session ID">📋</button>
+                    </div>
                     <div class="session-models" id="modalModels"></div>
                 </div>
                 <button class="close-x" onclick="closeViewModal()">×</button>
@@ -101,7 +104,7 @@
                 <div class="metadata-section">
                     <div class="metadata-header" onclick="toggleMetadata()">
                         <span class="metadata-toggle">▶</span>
-                        <span>Session Metadata (from sessions.json)</span>
+                        <span>Session Metadata</span>
                     </div>
                     <div class="metadata-content" id="metadataContent" style="display: none;">
                         <div class="details-grid metadata-grid">
@@ -198,20 +201,24 @@
             <!-- Entry Type Filter -->
             <div class="view-controls">
                 <div class="filter-group">
-                    <label class="filter-label">Filter:</label>
-                    <select id="entryTypeFilter" class="filter-select" onchange="applyEntryTypeFilter()">
-                        <option value="all">All Types</option>
-                        <option value="message">💬 Messages</option>
-                        <option value="tool">🔧 Tool Calls</option>
-                        <option value="tool_result">📥 Tool Results</option>
-                        <option value="thinking">🧠 Thinking</option>
-                        <option value="custom">⚡ Custom</option>
-                    </select>
-                    <label class="filter-label" style="margin-left: 12px;">Sort:</label>
-                    <select id="entrySortOrder" class="filter-select" onchange="applyEntrySortOrder()">
-                        <option value="newest">Newest First</option>
-                        <option value="oldest">Oldest First</option>
-                    </select>
+                    <div class="filter-item">
+                        <label class="filter-label" for="entryTypeFilter">Filter:</label>
+                        <select id="entryTypeFilter" class="filter-select" onchange="applyEntryTypeFilter()">
+                            <option value="all">All Types</option>
+                            <option value="message">💬 Messages</option>
+                            <option value="tool">🔧 Tool Calls</option>
+                            <option value="tool_result">📥 Tool Results</option>
+                            <option value="thinking">🧠 Thinking</option>
+                            <option value="custom">⚡ Custom</option>
+                        </select>
+                    </div>
+                    <div class="filter-item">
+                        <label class="filter-label" for="entrySortOrder">Sort:</label>
+                        <select id="entrySortOrder" class="filter-select" onchange="applyEntrySortOrder()">
+                            <option value="newest">Newest First</option>
+                            <option value="oldest">Oldest First</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="auto-refresh-indicator" id="autoRefreshIndicator" style="display: none;">
                     <span class="refresh-dot"></span> Auto-refreshing
