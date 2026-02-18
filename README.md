@@ -6,7 +6,7 @@
 
 A web UI to browse, view, edit, prune, and delete OpenClaw agent sessions.
 
-![BrainSurgeon Interface](./docs/screenshots/screenshot-main.png)
+![BrainSurgeon Interface](./screenshots/01-main-list.png)
 
 ---
 
@@ -31,7 +31,11 @@ Browse sessions like flipping through patient charts. Prune bloated tool outputs
 | 📊 **Vital Signs** | Token usage analytics, model breakdowns, duration tracking |
 | 🔄 **Resurrection** | Restore sessions from trash (we don't judge) |
 
-![Session Browser](./docs/screenshots/screenshot-sessions.png)
+![Session Browser](./screenshots/02-session-opened.png)
+
+### Demo
+
+![View and Edit Demo](./screenshots/view-edit-demo.gif)
 
 ---
 
@@ -116,12 +120,18 @@ Once running, open your browser to `http://localhost:8654`
 2. Sessions are sorted by most recent activity
 3. Click any session to open the detail view
 
+![Session List](./screenshots/01-main-list.png)
+
 ### Session Detail View
 - View all messages in parsed, readable format
 - See metadata: tokens, model, duration, channel
 - Click "Edit" to modify individual entries
 - Click "Prune" to strip tool outputs
 - Click "Delete" to send to trash
+
+![Session Detail View](./screenshots/02-session-opened.png)
+
+![Edit Dialog](./screenshots/05-edit-dialog.png)
 
 ### Pruning
 Pruning removes tool output content (keeps the calls). This dramatically reduces file size while preserving conversation flow. Use it when sessions get bloated from large tool responses.

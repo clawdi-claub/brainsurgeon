@@ -320,6 +320,66 @@
             font-size: 0.95rem;
         }
 
+        /* Screenshots Section */
+        .screenshots {
+            padding: 6rem 2rem;
+            background: var(--bg-primary);
+        }
+
+        .screenshots-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+
+        .screenshot-card {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            overflow: hidden;
+            transition: all 0.3s;
+        }
+
+        .screenshot-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--accent);
+            box-shadow: 0 10px 40px rgba(99, 102, 241, 0.2);
+        }
+
+        .screenshot-card img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .screenshot-card h4 {
+            font-family: 'Space Grotesk', sans-serif;
+            padding: 1rem 1.5rem;
+            margin: 0;
+            font-size: 1.1rem;
+            color: var(--text-primary);
+        }
+
+        .screenshot-card p {
+            padding: 0 1.5rem 1.5rem;
+            margin: 0;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .demo-gif {
+            margin-top: 3rem;
+            text-align: center;
+        }
+
+        .demo-gif img {
+            max-width: 100%;
+            border-radius: 1rem;
+            border: 1px solid var(--border);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+
         /* Installation Section */
         .install {
             padding: 6rem 2rem;
@@ -514,6 +574,10 @@
                 grid-template-columns: 1fr;
             }
 
+            .screenshots-grid {
+                grid-template-columns: 1fr;
+            }
+
             .install-panel {
                 padding: 1.5rem;
             }
@@ -532,6 +596,7 @@
         </div>
         <div class="nav-links">
             <a href="#features">Features</a>
+            <a href="#screenshots">Screenshots</a>
             <a href="#install">Install</a>
             <a href="https://github.com/clawdi-claub/brainsurgeon" target="_blank">GitHub</a>
         </div>
@@ -595,6 +660,48 @@
                     <h3>Resurrection</h3>
                     <p>Changed your mind? Restore deleted sessions from trash. Even the ones you thought were gone forever. We don't judge.</p>
                 </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Screenshots Section -->
+    <section class="screenshots" id="screenshots">
+        <div class="container">
+            <div class="section-header">
+                <h2>See It In Action</h2>
+                <p>Visual tour of BrainSurgeon's surgical capabilities</p>
+            </div>
+            
+            <div class="screenshots-grid">
+                <div class="screenshot-card">
+                    <img src="./screenshots/01-main-list.png" alt="Session List">
+                    <h4>🔍 Session Browser</h4>
+                    <p>Browse all your agent sessions with full metadata: tokens, models, duration, and channels.</p>
+                </div>
+                
+                <div class="screenshot-card">
+                    <img src="./screenshots/02-session-opened.png" alt="Session Detail">
+                    <h4>📋 Session Detail View</h4>
+                    <p>Deep dive into any conversation. See every message, tool call, and output in a clean, readable format.</p>
+                </div>
+                
+                <div class="screenshot-card">
+                    <img src="./screenshots/05-edit-dialog.png" alt="Edit Dialog">
+                    <h4>✏️ Edit Individual Entries</h4>
+                    <p>Modify individual messages directly. Fix typos, remove sensitive data, or rewrite history.</p>
+                </div>
+                
+                <div class="screenshot-card">
+                    <img src="./screenshots/07-back-to-list.png" alt="Back to List">
+                    <h4>🔄 Seamless Navigation</h4>
+                    <p>Quickly return to the session list after examining or editing a conversation.</p>
+                </div>
+            </div>
+            
+            <div class="demo-gif">
+                <h3 style="font-family: 'Space Grotesk', sans-serif; margin-bottom: 1rem;">🎬 Live Demo: View & Edit Workflow</h3>
+                <img src="./screenshots/view-edit-demo.gif" alt="View and Edit Demo">
+                <p style="color: var(--text-secondary); margin-top: 1rem;">Full workflow: browse sessions → open detail view → edit an entry → return to list</p>
             </div>
         </div>
     </section>
