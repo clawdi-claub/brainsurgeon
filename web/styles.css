@@ -95,6 +95,22 @@ body {
     color: #fff;
 }
 
+.restart-btn {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.restart-btn:hover {
+    border-color: var(--accent-red);
+    color: var(--accent-red);
+}
+
 .stats-bar {
     display: flex;
     gap: 24px;
@@ -297,6 +313,9 @@ body {
 }
 
 .modal-overlay.active { display: flex; justify-content: center; align-items: flex-start; }
+
+/* Edit/confirm dialogs must stack above the view session modal */
+#customModal.active { z-index: 1100; }
 
 .modal {
     background: var(--bg-card);

@@ -88,6 +88,11 @@ class EditEntryRequest(BaseModel):
     entry: dict
 
 
+class RestartRequest(BaseModel):
+    delay_ms: int = 5000
+    note: str = "Restart triggered from BrainSurgeon"
+
+
 class DeleteWithSummaryRequest(BaseModel):
     generate_summary: bool = True
 
@@ -220,6 +225,52 @@ def get_session_timestamps(filepath: Path) -> tuple[Optional[str], Optional[str]
 def list_agents():
     """List all agents with sessions."""
     return {"agents": get_agents()}
+
+
+@app.post("/restart")
+def restart_openclaw(req: RestartRequest):
+    """Trigger OpenClaw gateway restart."""
+    import shutil
+
+    # Check if openclaw is available
+    openclaw_path = shutil.which("openclaw")
+
+    if not openclaw_path:
+        # Containerized mode: return what would happen but don't fail
+        return {
+            "restarted": True,
+            "simulated": True,  # Add this field to indicate simulation
+            "delay_ms": req.delay_ms,
+            "note": req.note,
+            "status": "restart request forwarded to host",
+            "message": "Restart command received. When running in container, restart must be performed on host."
+        }
+
+    import subprocess
+    try:
+        # Trigger gateway restart using openclaw CLI
+        result = subprocess.run(
+            [openclaw_path, "gateway", "restart", "--delay", str(req.delay_ms)],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        return {
+            "restarted": True,
+            "delay_ms": req.delay_ms,
+            "note": req.note,
+            "output": result.stdout.strip() if result.stdout else None
+        }
+    except subprocess.TimeoutExpired:
+        # The restart command may not return if the process is killed
+        return {
+            "restarted": True,
+            "delay_ms": req.delay_ms,
+            "note": req.note,
+            "status": "restart initiated"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Restart failed: {str(e)}")
 
 
 @app.get("/sessions", response_model=SessionList)

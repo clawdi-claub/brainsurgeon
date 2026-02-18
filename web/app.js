@@ -44,6 +44,81 @@ function closeViewModal() {
 }
 
 // Load agents
+// Restart OpenClaw dialog
+function showRestartDialog() {
+    const bodyHtml = `
+        <div style="padding: 12px 0;">
+            <p>This will restart the OpenClaw gateway process.</p>
+            <p style="color: var(--accent-orange); margin-top: 8px;">⚠️ All active sessions will be interrupted and agents will reconnect.</p>
+            <dialog-option style="margin-top: 16px; display: flex; align-items: center; gap: 12px;">
+                <label style="color: var(--text-secondary); font-size: 0.85rem;">Delay before restart (ms): </label>
+                <input type="number" id="restartDelay" value="5000" min="1000" max="60000" step="1000" 
+                    style="width: 100px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); text-align: center;">
+            </dialog-option>
+        </div>
+    `;
+    
+    const footerHtml = `
+        <button class="btn" onclick="closeCustomModal()">Cancel</button>
+        <button class="btn btn-danger" onclick="confirmRestart()">Restart OpenClaw</button>
+    `;
+    
+    showCustomModal('Restart OpenClaw Gateway', bodyHtml, footerHtml);
+}
+
+async function confirmRestart() {
+    const delay = parseInt(document.getElementById('restartDelay').value) || 5000;
+    closeCustomModal();
+    
+    // Show restarting modal
+    const bodyHtml = `
+        <div style="text-align: center; padding: 20px;">
+            <div class="loading" style="display: inline-block; width: 32px; height: 32px;"></div>
+            <p style="margin-top: 12px; color: var(--accent-cyan);">Restarting OpenClaw in ${delay}ms...</p>
+        </div>
+    `;
+    showCustomModal('Restarting...', bodyHtml, '');
+    
+    try {
+        const r = await fetch(`${API}/restart`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({delay_ms: delay, note: "Restart triggered from BrainSurgeon"})
+        });
+        
+        if (r.ok) {
+            const data = await r.json();
+            // Update modal to show success - it will auto-close after a delay
+            const successHtml = `
+                <div style="text-align: center; padding: 20px;">
+                    <div style="font-size: 2rem;">✅</div>
+                    <p style="margin-top: 12px; color: var(--accent-green);">Restart initiated successfully!</p>
+                    <p style="margin-top: 8px; color: var(--text-secondary); font-size: 0.85rem;">Gateway will restart in ${data.delay_ms}ms.</p>
+                </div>
+            `;
+            document.getElementById('modalBody').innerHTML = successHtml;
+            document.getElementById('modalFooter').innerHTML = `<button class="btn" onclick="closeCustomModal()">OK</button>
+            `;
+            
+            // Auto-close after a few seconds
+            setTimeout(closeCustomModal, 3000);
+        } else {
+            throw new Error('Restart failed');
+        }
+    } catch (e) {
+        const errorHtml = `
+            <div style="text-align: center; padding: 20px;">
+                <div style="font-size: 2rem;">❌</div>
+                <p style="margin-top: 12px; color: var(--accent-red);">Restart failed</p>
+                <p style="margin-top: 8px; color: var(--text-secondary); font-size: 0.85rem;">${e.message}</p>
+            </div>
+        `;
+        document.getElementById('modalBody').innerHTML = errorHtml;
+        document.getElementById('modalFooter').innerHTML = `<button class="btn" onclick="closeCustomModal()">Close</button>
+        `;
+    }
+}
+
 async function loadAgents() {
     try {
         const r = await fetch(`${API}/agents`);
