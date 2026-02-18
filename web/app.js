@@ -508,6 +508,10 @@ function toggleMetadata() {
     toggle.classList.toggle('expanded', !isExpanded);
 }
 
+function isMobile() {
+    return window.innerWidth <= 768;
+}
+
 // View mode state for each entry
 const entryViewModes = {};
 
@@ -993,6 +997,14 @@ async function viewSession(agent, id) {
     document.getElementById('modalId').textContent = id;
     document.getElementById('modalModels').textContent = '';
     document.getElementById('modalBody2').innerHTML = '<div class="loading">Loading...</div>';
+    
+    // Auto-collapse metadata on mobile to save space
+    if (isMobile()) {
+        const content = document.getElementById('metadataContent');
+        const toggle = document.querySelector('.metadata-toggle');
+        if (content) content.style.display = 'none';
+        if (toggle) toggle.classList.remove('expanded');
+    }
     
     // Setup scroll tracking
     setTimeout(setupScrollTracking, 100);

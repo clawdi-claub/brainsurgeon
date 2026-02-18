@@ -1185,3 +1185,190 @@ body {
 .raw-json-view .json-null {
     color: var(--text-tertiary);
 }
+
+/* Mobile Styles - Modal covers full screen */
+@media (max-width: 768px) {
+    .modal-overlay {
+        padding: 0;
+    }
+
+    .modal-overlay.active {
+        align-items: stretch;
+    }
+
+    .modal {
+        max-width: 100%;
+        max-height: 100vh;
+        border-radius: 0;
+        margin: 0;
+    }
+
+    .view-modal {
+        max-width: 100%;
+    }
+
+    .modal-head {
+        padding: 12px 16px;
+        flex-shrink: 0;
+    }
+
+    .modal-title-text {
+        font-size: 1rem;
+    }
+
+    .modal-body {
+        padding: 12px 16px;
+    }
+
+    /* Session details panel - more compact on mobile */
+    .session-details-panel {
+        padding: 12px 16px;
+        max-height: 35vh;
+        overflow-y: auto;
+    }
+
+    .details-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        margin-bottom: 8px;
+    }
+
+    .detail-item {
+        gap: 2px;
+    }
+
+    .detail-label {
+        font-size: 0.65rem;
+    }
+
+    .detail-value {
+        font-size: 0.8rem;
+    }
+
+    .detail-row {
+        padding: 6px 0;
+        font-size: 0.8rem;
+    }
+
+    .detail-row .detail-label {
+        min-width: 80px;
+    }
+
+    /* View controls - stack vertically on mobile */
+    .view-controls {
+        padding: 10px 16px;
+        flex-direction: column;
+        gap: 10px;
+        align-items: stretch;
+        flex-shrink: 0;
+    }
+
+    .view-controls .filter-group {
+        justify-content: space-between;
+    }
+
+    /* Entries list takes remaining space */
+    #modalBody2 {
+        flex: 1;
+        overflow-y: auto;
+        min-height: 0;
+    }
+
+    /* Entry styling adjustments */
+    .entry {
+        padding: 10px;
+    }
+
+    .entry-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+    }
+
+    .entry-header-right {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .entry-view-toggle .toggle-btn {
+        padding: 4px 8px;
+        font-size: 0.65rem;
+    }
+
+    /* Metadata section - default collapsed on mobile */
+    .metadata-section {
+        margin-bottom: 8px;
+    }
+
+    .metadata-header {
+        padding: 8px 12px;
+        font-size: 0.8rem;
+    }
+
+    /* Main grid adjustments */
+    .session-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .main-container {
+        padding: 12px;
+    }
+
+    /* Header adjustments */
+    .app-header {
+        padding: 12px 16px;
+    }
+
+    .app-title {
+        font-size: 1.2rem;
+    }
+
+    .header-controls {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .filter-group {
+        flex-wrap: wrap;
+    }
+
+    /* Fix modal body height calculation */
+    #viewModal .modal {
+        display: flex;
+        flex-direction: column;
+    }
+
+    #viewModal .modal-body {
+        flex: 1;
+        overflow-y: auto;
+    }
+}
+
+/* Extra small screens */
+@media (max-width: 480px) {
+    .details-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 6px;
+    }
+
+    .detail-value {
+        font-size: 0.75rem;
+    }
+
+    .entry {
+        font-size: 0.75rem;
+    }
+
+    .entry-content-wrapper {
+        padding: 8px;
+    }
+
+    .content-text {
+        font-size: 0.8rem;
+    }
+
+    .raw-json-view {
+        font-size: 0.7rem;
+        padding: 10px;
+    }
+}
