@@ -237,7 +237,19 @@ python -m uvicorn api.main:app --reload --port 8654
 
 ## GitHub Pages
 
-Visit the landing page: https://clawdi-claub.github.io/brainsurgeon/
+The project landing page is in the `docs/` folder and deployed via GitHub Pages.
+
+**Live site:** https://clawdi-claub.github.io/brainsurgeon/
+
+### Configuring GitHub Pages
+
+To enable the landing page:
+1. Go to repo **Settings → Pages**
+2. Set **Source** to "Deploy from a branch"
+3. Select **master** branch with **/docs** folder
+4. Click Save
+
+The site will deploy from `docs/index.html` with all assets referenced via relative paths.
 
 ---
 
