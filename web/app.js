@@ -1407,7 +1407,7 @@ function showApiKeyBanner(show) {
 // Check if API requires authentication
 async function checkApiAuth() {
     try {
-        const r = await fetch(`${API}/agents`);
+        const r = await apiRequest(`${API}/agents`);
         if (r.status === 403) {
             showApiKeyBanner(true);
             // Clear the grid and show auth required state
