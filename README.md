@@ -47,7 +47,7 @@ Browse sessions like flipping through patient charts. Prune bloated tool outputs
 
 ```bash
 # Clone the repository
-git clone https://github.com/anderslaub/brainsurgeon.git
+git clone https://github.com/clawdi-claub/brainsurgeon.git
 cd brainsurgeon
 
 # Link to OpenClaw extensions directory
@@ -86,7 +86,7 @@ If you are an AI assistant installing this for a human:
 
 ```bash
 # Clone and prepare
-git clone https://github.com/anderslaub/brainsurgeon.git ~/.openclaw/extensions/brainsurgeon
+git clone https://github.com/clawdi-claub/brainsurgeon.git ~/.openclaw/extensions/brainsurgeon
 cd ~/.openclaw/extensions/brainsurgeon
 
 # Deploy with Docker
@@ -199,7 +199,7 @@ python -m uvicorn api.main:app --reload --port 8654
 
 ## GitHub Pages
 
-Visit the landing page: https://anderslaub.github.io/brainsurgeon
+Visit the landing page: https://clawdi-claub.github.io/brainsurgeon/
 
 ---
 
