@@ -104,10 +104,38 @@ exec:curl http://localhost:8654/agents
 
 ## Configuration
 
+### API Server
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `OPENCLAW_ROOT` | `~/.openclaw` | Path to your OpenClaw data directory |
 | `PORT` | `8654` | Port to run the API server |
+
+### Nginx (Reverse Proxy)
+
+When using nginx as a reverse proxy, copy `nginx.conf.template` to `nginx.conf` and set these environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NGINX_SERVER_NAME` | `localhost` | Server name for nginx (your domain) |
+| `SSL_CERT_PATH` | `/etc/nginx/certs/fullchain.pem` | Path to SSL certificate |
+| `SSL_KEY_PATH` | `/etc/nginx/certs/privkey.pem` | Path to SSL private key |
+| `API_HOST` | `127.0.0.1` | Host where BrainSurgeon API runs |
+| `API_PORT` | `8654` | Port where BrainSurgeon API runs |
+
+Generate the config with envsubst:
+```bash
+export NGINX_SERVER_NAME=your-domain.com
+export SSL_CERT_PATH=/path/to/cert.pem
+export SSL_KEY_PATH=/path/to/key.pem
+envsubst '
+  ${NGINX_SERVER_NAME}
+  ${SSL_CERT_PATH}
+  ${SSL_KEY_PATH}
+  ${API_HOST}
+  ${API_PORT}
+' < nginx.conf.template > nginx.conf
+```
 
 ---
 
