@@ -11,7 +11,7 @@
     <div class="app-header">
         <div class="app-title">🧠 BrainSurgeon</div>
         <div class="header-controls">
-            <input type="password" id="apiKeyInput" class="api-key-input" placeholder="API Key (if required)" title="Enter API Key if server requires authentication">
+            <input type="password" id="apiKeyInput" class="api-key-input" placeholder="🔒 API Key required" title="Enter API Key from server configuration">
             <button class="restart-btn" onclick="showRestartDialog()" title="Restart OpenClaw Gateway">↻ Restart</button>
             <div class="filter-group">
                 <select id="statusFilter" class="filter-select">
@@ -38,6 +38,12 @@
     </div>
 
     <div class="main-container">
+        <!-- API Key Required Message -->
+        <div id="apiKeyBanner" class="api-key-banner" style="display: none;">
+            <span class="api-key-icon">🔒</span>
+            <span class="api-key-text">API key required — enter your key above to access sessions</span>
+        </div>
+
         <div class="session-grid" id="sessionGrid">
             <div class="loading">Loading sessions...</div>
         </div>
