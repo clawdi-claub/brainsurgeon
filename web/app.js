@@ -1410,12 +1410,8 @@ async function checkApiAuth() {
         const r = await apiRequest(`${API}/agents`);
         if (r.status === 403) {
             showApiKeyBanner(true);
-            // Clear the grid and show auth required state
-            document.getElementById('sessionGrid').innerHTML = `
-                <div class="loading" style="color: var(--text-secondary);">
-                    🔒 Enter API key above to view sessions
-                </div>
-            `;
+            // Clear the grid - banner shows the message
+            document.getElementById('sessionGrid').innerHTML = '';
             return false;
         } else if (r.ok) {
             showApiKeyBanner(false);
