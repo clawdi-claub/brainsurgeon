@@ -139,7 +139,7 @@ async function forwardToApi(endpoint: string, data: any): Promise<void> {
       api?.log.debug(`Event forwarded to ${endpoint}`);
     }
   } catch (err: any) {
-    api?.log.error(`Error forwarding event to ${endpoint}:`, err);
+    api?.log.error(`error forwarding event to ${endpoint}: ${err.message}`);
   }
 }
 
@@ -178,6 +178,8 @@ async function restoreRemoteContent(
     return { success: false, error: 'Plugin not activated' };
   }
   
+  api.log.debug(`restoreRemoteContent: agent=${agentId} session=${sessionId} entry=${entryId} keys=${keysToRestore?.join(',') || 'all'}`);
+  
   try {
     // Find extracted file
     const agentsDir = '/home/openclaw/.openclaw/agents';
@@ -201,7 +203,9 @@ async function restoreRemoteContent(
     const sessionFile = path.join(agentsDir, agentId, 'sessions', `${sessionId}.jsonl`);
     const lockFile = `${sessionFile}.lock`;
     
+    api.log.debug(`acquiring lock: ${lockFile}`);
     await acquireLock(lockFile);
+    api.log.debug('lock acquired');
     
     try {
       const sessionContent = await fs.readFile(sessionFile, 'utf-8');
@@ -279,9 +283,10 @@ async function restoreRemoteContent(
       return { success: true, restoredKeys };
     } finally {
       await releaseLock(lockFile);
+      api.log.debug('lock released');
     }
   } catch (error: any) {
-    api.log.error('restore_remote error:', error);
+    api.log.error(`restore_remote error: ${error.message}`);
     return { success: false, error: error.message };
   }
 }
@@ -293,7 +298,7 @@ export async function activate(pluginApi: PluginApi): Promise<void> {
   api = pluginApi;
   
   api.log.info('BrainSurgeon plugin activating...');
-  api.log.info(`Config: ${JSON.stringify(api.config)}`);
+  api.log.debug(`config: ${JSON.stringify(api.config)}`);
 
   // Register restore_remote tool
   api.registerTool({
@@ -308,6 +313,8 @@ export async function activate(pluginApi: PluginApi): Promise<void> {
       if (!api) {
         throw new Error('Plugin not activated');
       }
+      
+      api.log.debug(`restore_remote called: session=${params.session} entry=${params.entry} keys=${params.keys || 'all'}`);
       
       // Parse keys if provided
       const keysToRestore = params.keys ? params.keys.split(',').map(k => k.trim()).filter(Boolean) : undefined;
@@ -325,6 +332,7 @@ export async function activate(pluginApi: PluginApi): Promise<void> {
         try {
           await fs.access(sessionFile);
           foundAgent = agent;
+          api.log.debug(`found session ${params.session} in agent ${agent}`);
           result = await restoreRemoteContent(agent, params.session, params.entry, keysToRestore);
           break;
         } catch {
@@ -383,7 +391,7 @@ export async function activate(pluginApi: PluginApi): Promise<void> {
           }
         }
       } catch (err: any) {
-        api?.log.error('Auto-prune failed:', err);
+        api?.log.error(`auto-prune failed: ${err.message}`);
       }
     }
   });
@@ -430,7 +438,7 @@ export async function activate(pluginApi: PluginApi): Promise<void> {
           message: `Compaction triggered for session ${sessionId}`,
         };
       } catch (err: any) {
-        api?.log.error('Compact command failed:', err);
+        api?.log.error(`compact command failed: ${err.message}`);
         return {
           success: false,
           error: `Compaction failed: ${err.message}`,
@@ -471,7 +479,7 @@ export async function activate(pluginApi: PluginApi): Promise<void> {
           sessionId,
         }));
       } catch (err: any) {
-        api?.log.error('HTTP compact trigger failed:', err);
+        api?.log.error(`HTTP compact trigger failed: ${err.message}`);
         res.statusCode = 500;
         res.end(JSON.stringify({ error: err.message }));
       }
@@ -490,7 +498,7 @@ export async function deactivate(): Promise<void> {
   // Cleanup any resources
   api = null;
   
-  console.log('BrainSurgeon extension deactivated');
+  // api is already null at this point, so we can't log via api.log
 }
 
 // Legacy default export for compatibility
