@@ -10,7 +10,9 @@ export type MessageType =
   | 'prune.request'        // Request pruning
   | 'prune.response'       // Pruning complete
   | 'restore.request'      // Request restore_response
-  | 'restore.response';    // Restore complete
+  | 'restore.response'     // Restore complete
+  | 'compact.request'      // Request session compaction
+  | 'compact.response';    // Compaction complete
 
 export interface Message {
   id: string;
@@ -61,6 +63,22 @@ export type RestoreResponsePayload = {
   sessionId: string;
   toolCallId: string;
   success: boolean;
+  error?: string;
+};
+
+export type CompactRequestPayload = {
+  agentId: string;
+  sessionId: string;
+  instructions?: string;  // Optional custom compaction instructions
+  triggeredBy: 'webui' | 'extension' | 'api';
+};
+
+export type CompactResponsePayload = {
+  agentId: string;
+  sessionId: string;
+  success: boolean;
+  entriesBefore?: number;
+  entriesAfter?: number;
   error?: string;
 };
 

@@ -120,49 +120,20 @@ export function createSessionRoutes(
     const body = await c.req.json().catch(() => ({}));
 
     try {
-      // Forward to extension to trigger OpenClaw compaction
-      // Extension listens on a well-known route or uses plugin API
-      
-      // For now, we store a compaction request in the message bus
-      // The extension or OpenClaw can pick this up
-      await sessionService.publishEvent?.('session.compacted', {
+      // Publish compact.request to message bus
+      // Extension subscribes and triggers OpenClaw compaction
+      await sessionService.publishEvent?.('compact.request', {
         agentId,
         sessionId,
         instructions: body.instructions,
-        triggeredAt: new Date().toISOString(),
+        triggeredBy: 'webui',
       });
       
-      // Also forward to extension if configured
-      const extensionUrl = process.env.BRAINSURGEON_EXTENSION_URL || 'http://localhost:8654';
-      try {
-        const response = await fetch(`${extensionUrl}/trigger-compact`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId,
-            sessionId,
-            instructions: body.instructions,
-          }),
-        });
-        
-        if (response.ok) {
-          const result = await response.json();
-          return c.json({
-            success: true,
-            message: 'OpenClaw compaction triggered via extension',
-            details: result,
-            agent: agentId,
-            session: sessionId,
-          });
-        }
-      } catch (extError) {
-        // Extension not available, continue with message bus approach
-        log.debug('extension not available for compaction, using message bus');
-      }
+      log.debug({ agentId, sessionId }, 'compact.request published to bus');
 
       return c.json({
         success: true,
-        message: 'Compaction request queued. OpenClaw will process when available.',
+        message: 'Compaction request queued. Extension will process via message bus.',
         agent: agentId,
         session: sessionId,
         instructions: body.instructions,
