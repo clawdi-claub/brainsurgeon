@@ -1168,24 +1168,8 @@ async function viewSession(agent, id) {
         document.getElementById('detailStatus').textContent = data.is_stale ? '⭐ Stale' : '🟢 Active';
         document.getElementById('detailStatus').className = 'detail-value ' + (data.is_stale ? 'status-stale' : 'status-active');
 
-        // Update models used - only active model is green
-        const models = [];
-        const modelSet = new Set();
-        data.entries?.forEach(e => {
-            if (e.type === 'custom' && e.customType === 'model-snapshot') {
-                const modelId = e.data?.modelId || e.data?.model;
-                if (modelId && !modelSet.has(modelId)) {
-                    modelSet.add(modelId);
-                    models.push(modelId);
-                }
-            } else if (e.type === 'message') {
-                const msg = e.message || {};
-                if (msg.model && !modelSet.has(msg.model)) {
-                    modelSet.add(msg.model);
-                    models.push(msg.model);
-                }
-            }
-        });
+        // Update models used - use pre-computed models from API, active on LEFT
+        const models = data.models || [];
         
         // Show models in header - only active is green, active on LEFT
         if (models.length > 0) {
@@ -1198,6 +1182,8 @@ async function viewSession(agent, id) {
                 const displayModel = m.split('/').pop().substring(0, 20);
                 return `<span class="${className}">${escapeHtml(displayModel)}</span>`;
             }).join(' ');
+        } else {
+            document.getElementById('modalModels').innerHTML = '<span class="session-model inactive">No models</span>';
         }
 
         // Parent/child relationships
