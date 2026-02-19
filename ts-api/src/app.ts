@@ -42,44 +42,50 @@ const pruneService = new PruneService(sessionRepository, lockService, externalSt
 const trashRepository = new FileSystemTrashRepository(SESSIONS_DIR);
 const trashService = new TrashService(trashRepository);
 
-// Create Hono app
-const app = new Hono();
+// Create Hono app with /api base path for backward compatibility
+const apiApp = new Hono();
 
-// Health check
-app.get('/health', (c) => c.json({ status: 'ok', version: '2.0.0' }));
+// Health check (available at both /health and /api/health)
+apiApp.get('/health', (c) => c.json({ status: 'ok', version: '2.0.0' }));
 
 // Mount session routes
 const sessionRoutes = createSessionRoutes(sessionService, pruneService);
-app.route('/sessions', sessionRoutes);
+apiApp.route('/sessions', sessionRoutes);
 
 // Mount trash routes
 const trashRoutes = createTrashRoutes(trashService);
-app.route('/trash', trashRoutes);
+apiApp.route('/trash', trashRoutes);
 
 // Agents endpoint
-app.get('/agents', async (c) => {
+apiApp.get('/agents', async (c) => {
   const sessions = await sessionService.listSessions();
   const agents = [...new Set(sessions.map(s => s.agentId))];
   return c.json(agents);
 });
 
 // Config endpoint
-app.get('/config', (c) => c.json({
+apiApp.get('/config', (c) => c.json({
   autoRefreshInterval: 10000,
   version: '2.0.0',
 }));
 
 // Restart endpoint
-app.post('/restart', async (c) => {
+apiApp.post('/restart', async (c) => {
   setTimeout(() => process.exit(0), 100);
   return c.json({ success: true, message: 'Restarting...' });
 });
 
 // Error handler
-app.onError((err, c) => {
+apiApp.onError((err, c) => {
   console.error('Error:', err);
   return c.json({ error: 'Internal server error' }, 500);
 });
+
+// Main app mounts everything under /api
+const app = new Hono();
+app.route('/api', apiApp);
+// Also mount at root for direct access
+app.route('/', apiApp);
 
 // Start message bus and server
 async function main() {
