@@ -1047,8 +1047,16 @@ function startAutoRefresh(agent, id) {
     
     const indicator = document.getElementById('autoRefreshIndicator');
     const dot = indicator?.querySelector('.refresh-dot');
-    if (indicator) indicator.style.display = 'flex';
-    if (dot) dot.classList.remove('stopped');
+    if (indicator) {
+        indicator.style.display = 'flex';
+        indicator.style.pointerEvents = 'auto';
+        indicator.setAttribute('onclick', 'stopAutoRefresh()');
+        indicator.title = 'Click to stop auto-refresh';
+    }
+    if (dot) {
+        dot.classList.remove('stopped');
+        dot.classList.remove('inactive');
+    }
     
     autoRefreshInterval = setInterval(async () => {
         if (!document.getElementById('viewModal').classList.contains('active')) {
@@ -1238,11 +1246,19 @@ async function viewSession(agent, id) {
         if (!data.is_stale) {
             startAutoRefresh(agent, id);
         } else {
-            // Show stopped indicator for stale sessions
+            // Show inactive (grey) indicator for stale sessions - not clickable
             const indicator = document.getElementById('autoRefreshIndicator');
             const dot = indicator?.querySelector('.refresh-dot');
-            if (indicator) indicator.style.display = 'flex';
-            if (dot) dot.classList.add('stopped');
+            if (indicator) {
+                indicator.style.display = 'flex';
+                indicator.style.pointerEvents = 'none';
+                indicator.removeAttribute('onclick');
+                indicator.title = 'Session is stale - auto-refresh disabled';
+            }
+            if (dot) {
+                dot.classList.remove('stopped');
+                dot.classList.add('inactive');
+            }
         }
     } catch (e) {
         document.getElementById('modalBody2').innerHTML = '<div class="empty">Failed to load session</div>';
