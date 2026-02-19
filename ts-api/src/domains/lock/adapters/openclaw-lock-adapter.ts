@@ -27,6 +27,7 @@ export class OpenClawLockAdapter implements LockService {
 
   async acquire(sessionFile: string): Promise<LockHandle> {
     const lockPath = `${sessionFile}.lock`;
+    log.debug({ lockPath }, 'acquiring lock');
     const payload: LockPayload = {
       pid: process.pid,
       createdAt: new Date().toISOString(),
@@ -58,8 +59,10 @@ export class OpenClawLockAdapter implements LockService {
       // Start watchdog
       this.startWatchdog(lockPath);
 
+      log.debug({ lockPath }, 'lock acquired');
       return {
         release: async () => {
+          log.debug({ lockPath }, 'releasing lock');
           this.stopWatchdog(lockPath);
           try {
             await rm(lockPath, { force: true });
@@ -86,6 +89,7 @@ export class OpenClawLockAdapter implements LockService {
 
         // Lock held, wait with exponential backoff
         const delayMs = Math.min(1000, 50 * (attempt + 1));
+        log.debug({ lockPath, attempt, delayMs }, 'lock held, retrying');
         await this.sleep(delayMs);
         return this.tryAcquire(lockPath, payload, attempt + 1);
       }
@@ -121,6 +125,7 @@ export class OpenClawLockAdapter implements LockService {
       const ageMs = Date.now() - stats.mtimeMs;
       
       if (ageMs > this.staleMs) {
+        log.debug({ lockPath, ageMs }, 'detected stale lock');
         return true;
       }
 

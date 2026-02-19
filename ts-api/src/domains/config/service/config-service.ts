@@ -7,6 +7,9 @@ import type {
 } from '../model/config.js';
 import { VALID_TRIGGER_TYPES } from '../model/config.js';
 import { parseDuration, isValidDuration } from '../../../shared/utils/duration-parser.js';
+import { createLogger } from '../../../shared/logging/logger.js';
+
+const log = createLogger('config-service');
 
 export interface ConfigService {
   getConfig(): Promise<ConfigResponse>;
@@ -19,11 +22,13 @@ export class BrainSurgeonConfigService implements ConfigService {
   constructor(private repository: ConfigRepository) {}
 
   async getConfig(): Promise<ConfigResponse> {
+    log.debug('loading config');
     const full = await this.repository.load();
     return this.toResponse(full);
   }
 
   async updateConfig(update: ConfigUpdateRequest): Promise<ConfigResponse> {
+    log.debug({ update }, 'updating config');
     // Validate the update
     this.validateUpdate(update);
     

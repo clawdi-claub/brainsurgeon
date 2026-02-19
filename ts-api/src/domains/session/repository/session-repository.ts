@@ -4,6 +4,9 @@ import { readFileSync, statSync } from 'node:fs';
 import type { Session, SessionListItem, SessionMetadata, JsonEntry } from '../models/entry.js';
 import type { LockService } from '../../lock/services/lock-service.js';
 import { NotFoundError } from '../../../shared/errors/index.js';
+import { createLogger } from '../../../shared/logging/logger.js';
+
+const log = createLogger('session-repo');
 
 interface CacheEntry {
   entries: JsonEntry[];
@@ -68,6 +71,7 @@ export class FileSystemSessionRepository implements SessionRepository {
 
   async load(agentId: string, sessionId: string): Promise<Session> {
     const sessionFile = this.resolvePath(agentId, sessionId);
+    log.debug({ agentId, sessionId }, 'loading session');
 
     // Check existence first
     if (!(await this.fileExists(sessionFile))) {
@@ -79,6 +83,7 @@ export class FileSystemSessionRepository implements SessionRepository {
     const rawMeta = await this.lookupRawMeta(agentId, sessionId);
 
     if (cached) {
+      log.debug({ agentId, sessionId, entries: cached.entries.length }, 'loaded from cache');
       return {
         id: sessionId,
         agentId,
@@ -155,6 +160,7 @@ export class FileSystemSessionRepository implements SessionRepository {
 
   async save(agentId: string, sessionId: string, session: Session): Promise<void> {
     const sessionFile = this.resolvePath(agentId, sessionId);
+    log.debug({ agentId, sessionId, entries: session.entries.length }, 'saving session');
     
     // Ensure directory exists
     await mkdir(dirname(sessionFile), { recursive: true });
