@@ -4,6 +4,38 @@ let currentAgent = 'all';
 let currentStatusFilter = 'all';
 let currentTypeFilter = 'all';
 
+// User's locale for date formatting
+const USER_LOCALE = navigator.language || 'en-US';
+const USER_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+// Format datetime using user's locale and timezone
+function formatDateTime(isoString) {
+    if (!isoString) return '—';
+    const date = new Date(isoString);
+    return date.toLocaleString(USER_LOCALE, {
+        timeZone: USER_TIMEZONE,
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    });
+}
+
+// Format date only (for trash expiration)
+function formatDate(isoString) {
+    if (!isoString) return '—';
+    const date = new Date(isoString);
+    return date.toLocaleDateString(USER_LOCALE, {
+        timeZone: USER_TIMEZONE,
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+}
+
 // API Key configuration (set via localStorage or input field)
 function getApiKey() {
     return localStorage.getItem('brainsurgeon_api_key') || '';
@@ -289,7 +321,7 @@ function renderSessions() {
             </div>
             <div class="session-meta">
                 <span>${formatDuration(s.duration_minutes)}</span>
-                <span class="status-${s.status}">${s.updated ? new Date(s.updated).toLocaleString() : '—'}</span>
+                <span class="status-${s.status}">${s.updated ? formatDateTime(s.updated) : '—'}</span>
             </div>
             <div class="session-actions" onclick="event.stopPropagation()">
                 <button class="btn" onclick="viewSession('${s.agent}', '${s.id}')">View</button>
@@ -1080,8 +1112,8 @@ async function viewSession(agent, id) {
         document.getElementById('detailMessages').textContent = data.messages || 0;
         document.getElementById('detailTools').textContent = data.tool_calls || 0;
         document.getElementById('detailDuration').textContent = formatDuration(data.duration_minutes);
-        document.getElementById('detailCreated').textContent = data.created ? new Date(data.created).toLocaleString() : '—';
-        document.getElementById('detailUpdated').textContent = data.updated ? new Date(data.updated).toLocaleString() : '—';
+        document.getElementById('detailCreated').textContent = data.created ? formatDateTime(data.created) : '—';
+        document.getElementById('detailUpdated').textContent = data.updated ? formatDateTime(data.updated) : '—';
         document.getElementById('detailStatus').textContent = data.is_stale ? '⭐ Stale' : '🟢 Active';
         document.getElementById('detailStatus').className = 'detail-value ' + (data.is_stale ? 'status-stale' : 'status-active');
 
@@ -1144,8 +1176,8 @@ async function viewSession(agent, id) {
         const channelEl = document.getElementById('metaChannel');
         if (channelEl) channelEl.textContent = data.channel || '—';
         
-        document.getElementById('metaStarted').textContent = data.created ? new Date(data.created).toLocaleString() : '—';
-        document.getElementById('metaLastInteraction').textContent = data.updated ? new Date(data.updated).toLocaleString() : '—';
+        document.getElementById('metaStarted').textContent = data.created ? formatDateTime(data.created) : '—';
+        document.getElementById('metaLastInteraction').textContent = data.updated ? formatDateTime(data.updated) : '—';
         
         const tokensEl = document.getElementById('metaTokens');
         if (tokensEl) tokensEl.textContent = data.tokens ? data.tokens.toLocaleString() : '—';
@@ -1402,8 +1434,8 @@ async function loadTrashSessions() {
         body.innerHTML = `
             <div class="trash-list">
                 ${data.sessions.map(s => {
-                    const trashedAt = s.trashed_at ? new Date(s.trashed_at).toLocaleString() : '—';
-                    const expiresAt = s.expires_at ? new Date(s.expires_at).toLocaleDateString() : '—';
+                    const trashedAt = s.trashed_at ? formatDateTime(s.trashed_at) : '—';
+                    const expiresAt = s.expires_at ? formatDate(s.expires_at) : '—';
                     return `
                     <div class="trash-item">
                         <div class="trash-info">
