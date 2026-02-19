@@ -1234,9 +1234,15 @@ async function viewSession(agent, id) {
         // Render body based on current view mode
         renderSessionBody(data);
         
-        // Start auto-refresh for active sessions
+        // Show indicator for all sessions, auto-refresh only for active
         if (!data.is_stale) {
             startAutoRefresh(agent, id);
+        } else {
+            // Show stopped indicator for stale sessions
+            const indicator = document.getElementById('autoRefreshIndicator');
+            const dot = indicator?.querySelector('.refresh-dot');
+            if (indicator) indicator.style.display = 'flex';
+            if (dot) dot.classList.add('stopped');
         }
     } catch (e) {
         document.getElementById('modalBody2').innerHTML = '<div class="empty">Failed to load session</div>';
