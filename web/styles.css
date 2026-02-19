@@ -802,7 +802,7 @@ body {
 .refresh-dot {
     width: 8px;
     height: 8px;
-    background: var(--accent-cyan);
+    background: var(--accent-green);
     border-radius: 50%;
     animation: pulse 2s infinite;
 }

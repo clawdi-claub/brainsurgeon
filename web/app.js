@@ -810,17 +810,26 @@ function getEntryType(entry) {
     if (type === 'message') {
         const msg = entry.message || {};
         const role = msg.role || '';
+        const content = msg.content;
+        
         // Check if this message contains tool calls
         if (msg.tool_calls && msg.tool_calls.length > 0) {
+            return 'tool';
+        }
+        // Check for toolCall in content array (OpenClaw format)
+        if (Array.isArray(content) && content.some(c => c && c.type === 'toolCall')) {
             return 'tool';
         }
         // Check if this is a tool result message
         if (role === 'toolResult') {
             return 'tool_result';
         }
+        // Check for tool result in content array
+        if (Array.isArray(content) && content.some(c => c && c.type === 'toolResult')) {
+            return 'tool_result';
+        }
         // Check if this message contains thinking
-        const content = msg.content;
-        if (Array.isArray(content) && content.some(c => c.type === 'thinking')) {
+        if (Array.isArray(content) && content.some(c => c && c.type === 'thinking')) {
             return 'thinking';
         }
         return 'message';
