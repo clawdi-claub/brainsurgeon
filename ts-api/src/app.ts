@@ -3,11 +3,20 @@ import { serve } from '@hono/node-server';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
+// Domain - Session
+import { FileSystemSessionRepository } from './domains/session/repository/session-repository.js';
+import { SessionService } from './domains/session/services/session-service.js';
+import { PruneService } from './domains/session/services/prune-service.js';
+import { createSessionRoutes } from './domains/session/api/routes.js';
+
+// Domain - Trash
+import { FileSystemTrashRepository } from './domains/trash/repository/trash-repository.js';
+import { TrashService } from './domains/trash/services/trash-service.js';
+import { createTrashRoutes } from './domains/trash/api/routes.js';
+
 // Infrastructure
 import { SqliteMessageBus } from './infrastructure/bus/sqlite-bus.js';
-
-// Domain - Lock
-import { OpenClawLockAdapter } from './domains/lock/adapters/openclaw-lock-adapter.js';
+import { ExternalStorage } from './infrastructure/external/storage.js';
 
 // Domain - Session
 import { FileSystemSessionRepository } from './domains/session/repository/session-repository.js';
@@ -36,7 +45,8 @@ const messageBus = new SqliteMessageBus(join(DATA_DIR, 'bus.db'));
 const lockService = new OpenClawLockAdapter();
 const sessionRepository = new FileSystemSessionRepository(SESSIONS_DIR, lockService);
 const sessionService = new SessionService(sessionRepository, lockService);
-const pruneService = new PruneService(sessionRepository, lockService);
+const externalStorage = new ExternalStorage({ sessionsDir: SESSIONS_DIR });
+const pruneService = new PruneService(sessionRepository, lockService, externalStorage);
 const trashRepository = new FileSystemTrashRepository(SESSIONS_DIR);
 const trashService = new TrashService(trashRepository);
 

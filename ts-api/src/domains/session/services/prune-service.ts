@@ -1,6 +1,7 @@
 import type { Session, SessionEntry } from '../models/entry.js';
 import type { SessionRepository } from '../repository/session-repository.js';
 import type { LockService } from '../../lock/services/lock-service.js';
+import type { ExternalStorage } from '../../../infrastructure/external/storage.js';
 
 export interface PruneOptions {
   keepRecent?: number;        // Keep last N entries
@@ -17,11 +18,12 @@ export interface PruneResult {
 export class PruneService {
   constructor(
     private sessionRepo: SessionRepository,
-    private lockService: LockService
+    private lockService: LockService,
+    private externalStorage: ExternalStorage
   ) {}
 
   async execute(agentId: string, sessionId: string, options: PruneOptions = {}): Promise<PruneResult> {
-    const { keepRecent = 50, threshold = 3 } = options;
+    const { threshold = 3 } = options;
     
     // Load session with lock
     const sessionFile = this.resolveSessionFile(agentId, sessionId);
@@ -42,8 +44,10 @@ export class PruneService {
       const externalizedIds: string[] = [];
       
       for (const entry of session.entries) {
-        if (toExternalize.includes(entry.id)) {
-          // Externalize and replace with stub
+        if (toExternalize.includes(entry.id) && entry.type === 'tool_result') {
+          // Store full content externally
+          await this.externalStorage.store(agentId, sessionId, entry.id, entry);
+          
           externalizedIds.push(entry.id);
           keptEntries.push(this.createStubEntry(entry));
         } else {
