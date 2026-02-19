@@ -18,6 +18,9 @@ import { FileSystemTrashRepository } from './domains/trash/repository/trash-repo
 import { TrashService } from './domains/trash/services/trash-service.js';
 import { createTrashRoutes } from './domains/trash/api/routes.js';
 
+// Domain - Lock API
+import { createLockRoutes } from './domains/lock/api/routes.js';
+
 // Infrastructure
 import { SqliteMessageBus } from './infrastructure/bus/sqlite-bus.js';
 import { ExternalStorage } from './infrastructure/external/storage.js';
@@ -55,6 +58,10 @@ apiApp.route('/sessions', sessionRoutes);
 // Mount trash routes
 const trashRoutes = createTrashRoutes(trashService);
 apiApp.route('/trash', trashRoutes);
+
+// Mount lock routes
+const lockRoutes = createLockRoutes(lockService, AGENTS_DIR);
+apiApp.route('/lock', lockRoutes);
 
 // Agents endpoint - returns list of agent IDs
 apiApp.get('/agents', async (c) => {
