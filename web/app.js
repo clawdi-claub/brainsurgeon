@@ -1187,11 +1187,13 @@ async function viewSession(agent, id) {
             }
         });
         
-        // Show models in header - only active is green
+        // Show models in header - only active is green, active on LEFT
         if (models.length > 0) {
-            const activeModel = models[models.length - 1];
-            document.getElementById('modalModels').innerHTML = models.slice(-3).map((m, idx) => {
-                const isActive = idx === models.length - 1 || (models.length > 3 && idx === 2);
+            const lastThree = models.slice(-3);
+            // Reverse so active (last) is on the left
+            const reversed = lastThree.slice().reverse();
+            document.getElementById('modalModels').innerHTML = reversed.map((m, idx) => {
+                const isActive = idx === 0;  // First (most recent) is active
                 const className = isActive ? 'session-model' : 'session-model inactive';
                 const displayModel = m.split('/').pop().substring(0, 20);
                 return `<span class="${className}">${escapeHtml(displayModel)}</span>`;
