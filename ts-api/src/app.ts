@@ -15,6 +15,11 @@ import { SessionService } from './domains/session/services/session-service.js';
 import { PruneService } from './domains/session/services/prune-service.js';
 import { createSessionRoutes } from './domains/session/api/routes.js';
 
+// Domain - Trash
+import { FileSystemTrashRepository } from './domains/trash/repository/trash-repository.js';
+import { TrashService } from './domains/trash/services/trash-service.js';
+import { createTrashRoutes } from './domains/trash/api/routes.js';
+
 // Config
 const PORT = Number(process.env.PORT) || 8000;
 const SESSIONS_DIR = process.env.SESSIONS_DIR || '/home/openclaw/.openclaw/sessions';
@@ -32,6 +37,8 @@ const lockService = new OpenClawLockAdapter();
 const sessionRepository = new FileSystemSessionRepository(SESSIONS_DIR, lockService);
 const sessionService = new SessionService(sessionRepository, lockService);
 const pruneService = new PruneService(sessionRepository, lockService);
+const trashRepository = new FileSystemTrashRepository(SESSIONS_DIR);
+const trashService = new TrashService(trashRepository);
 
 // Create Hono app
 const app = new Hono();
@@ -42,6 +49,10 @@ app.get('/health', (c) => c.json({ status: 'ok', version: '2.0.0' }));
 // Mount session routes
 const sessionRoutes = createSessionRoutes(sessionService, pruneService);
 app.route('/sessions', sessionRoutes);
+
+// Mount trash routes
+const trashRoutes = createTrashRoutes(trashService);
+app.route('/trash', trashRoutes);
 
 // Agents endpoint
 app.get('/agents', async (c) => {
