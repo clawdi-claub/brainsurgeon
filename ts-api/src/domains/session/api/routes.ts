@@ -93,12 +93,55 @@ export function createSessionRoutes(
   app.post('/:agent/:id/compact', async (c) => {
     const agentId = c.req.param('agent');
     const sessionId = c.req.param('id');
+    const body = await c.req.json().catch(() => ({}));
 
     try {
+      // Forward to extension to trigger OpenClaw compaction
+      // Extension listens on a well-known route or uses plugin API
+      
+      // For now, we store a compaction request in the message bus
+      // The extension or OpenClaw can pick this up
+      await sessionService.publishEvent?.('session.compacted', {
+        agentId,
+        sessionId,
+        instructions: body.instructions,
+        triggeredAt: new Date().toISOString(),
+      });
+      
+      // Also forward to extension if configured
+      const extensionUrl = process.env.BRAINSURGEON_EXTENSION_URL || 'http://localhost:8654';
+      try {
+        const response = await fetch(`${extensionUrl}/trigger-compact`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agentId,
+            sessionId,
+            instructions: body.instructions,
+          }),
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          return c.json({
+            success: true,
+            message: 'OpenClaw compaction triggered via extension',
+            details: result,
+            agent: agentId,
+            session: sessionId,
+          });
+        }
+      } catch (extError) {
+        // Extension not available, continue with message bus approach
+        console.log('Extension not available for compaction, using message bus');
+      }
+
       return c.json({
-        message: 'Session compaction triggered.',
-        details: 'OpenClaw\'s built-in context compaction will run.',
-        status: 'success'
+        success: true,
+        message: 'Compaction request queued. OpenClaw will process when available.',
+        agent: agentId,
+        session: sessionId,
+        instructions: body.instructions,
       });
     } catch (error) {
       if (error instanceof Error && error.name === 'NotFoundError') {

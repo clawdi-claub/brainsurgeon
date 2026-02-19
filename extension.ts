@@ -2,14 +2,20 @@ import { Type } from '@sinclair/typebox';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-// Plugin API interface (provided by OpenClaw at runtime)
+// Full OpenClaw Plugin API interface (provided by OpenClaw at runtime)
 interface PluginApi {
+  id: string;
+  name: string;
+  version?: string;
+  description?: string;
   config: {
     apiUrl?: string;
     enableAutoPrune?: boolean;
     autoPruneThreshold?: number;
   };
   registerTool: (tool: ToolDefinition) => void;
+  registerCommand: (command: CommandDefinition) => void;
+  registerHttpRoute: (params: { path: string; handler: (req: any, res: any) => void | Promise<void> }) => void;
   on: (event: string, handler: (event: any) => void | Promise<void>) => void;
   emit: (event: string, data: any) => void;
   log: {
@@ -24,6 +30,26 @@ interface ToolDefinition {
   description: string;
   parameters: any;
   execute: (id: string, params: any) => Promise<any>;
+}
+
+interface CommandDefinition {
+  name: string;
+  description: string;
+  aliases?: string[];
+  handler: (ctx: CommandContext) => Promise<CommandResult> | CommandResult;
+}
+
+interface CommandContext {
+  agentId?: string;
+  sessionId?: string;
+  args: string[];
+  prompt?: string;
+}
+
+interface CommandResult {
+  success: boolean;
+  message?: string;
+  error?: string;
 }
 
 // Global API reference (set during activate)
@@ -288,6 +314,90 @@ export async function activate(pluginApi: PluginApi): Promise<void> {
   api.on('session_created', async (event: any) => {
     api?.log.debug(`session_created event: ${JSON.stringify(event)}`);
     await forwardToApi('/api/events/session-created', event);
+  });
+
+  // Register compact command for OpenClaw integration
+  api.registerCommand({
+    name: 'bscompact',
+    description: 'Trigger BrainSurgeon compact for current session',
+    aliases: ['bsc'],
+    async handler(ctx: CommandContext) {
+      const { agentId, sessionId, prompt } = ctx;
+      
+      if (!agentId || !sessionId) {
+        return { success: false, error: 'No active session' };
+      }
+      
+      api?.log.info(`Compact command triggered for ${agentId}/${sessionId}`);
+      
+      try {
+        // Emit before_compaction event to trigger OpenClaw's compaction
+        api?.emit('before_compaction', {
+          agentId,
+          sessionId,
+          customInstructions: prompt,
+          triggeredBy: 'brainsurgeon',
+        });
+        
+        // Notify TypeScript API
+        await forwardToApi('/api/events/compaction-triggered', {
+          agentId,
+          sessionId,
+          instructions: prompt,
+          timestamp: new Date().toISOString(),
+        });
+        
+        return {
+          success: true,
+          message: `Compaction triggered for session ${sessionId}`,
+        };
+      } catch (err: any) {
+        api?.log.error('Compact command failed:', err);
+        return {
+          success: false,
+          error: `Compaction failed: ${err.message}`,
+        };
+      }
+    },
+  });
+
+  // Register HTTP route for external compact trigger (from TypeScript API)
+  api.registerHttpRoute({
+    path: '/trigger-compact',
+    async handler(req: any, res: any) {
+      try {
+        const body = await req.json?.() || {};
+        const { agentId, sessionId, instructions } = body;
+        
+        if (!agentId || !sessionId) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: 'Missing agentId or sessionId' }));
+          return;
+        }
+        
+        api?.log.info(`HTTP compact trigger for ${agentId}/${sessionId}`);
+        
+        // Emit compaction event
+        api?.emit('before_compaction', {
+          agentId,
+          sessionId,
+          customInstructions: instructions,
+          triggeredBy: 'brainsurgeon-api',
+        });
+        
+        res.statusCode = 200;
+        res.end(JSON.stringify({
+          success: true,
+          message: 'Compaction triggered',
+          agentId,
+          sessionId,
+        }));
+      } catch (err: any) {
+        api?.log.error('HTTP compact trigger failed:', err);
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    },
   });
 
   api.log.info('BrainSurgeon plugin activated successfully');

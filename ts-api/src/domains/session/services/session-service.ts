@@ -1,6 +1,7 @@
 import type { Session, JsonEntry, SessionListItem, SessionMetadata } from '../models/entry.js';
 import type { SessionRepository } from '../repository/session-repository.js';
 import type { LockService } from '../../lock/services/lock-service.js';
+import type { MessageBus } from '../../../infrastructure/bus/types.js';
 import { NotFoundError } from '../../../shared/errors/index.js';
 
 export interface SummaryResult {
@@ -13,7 +14,8 @@ export interface SummaryResult {
 export class SessionService {
   constructor(
     private sessionRepo: SessionRepository,
-    private lockService: LockService
+    private lockService: LockService,
+    private messageBus?: MessageBus
   ) {}
 
   async getSession(agentId: string, sessionId: string): Promise<Session> {
@@ -94,6 +96,13 @@ export class SessionService {
 
     session.entries[index] = replacement;
     await this.sessionRepo.save(agentId, sessionId, session);
+  }
+
+  // Publish event to message bus (for extension integration)
+  async publishEvent<T>(type: string, payload: T): Promise<void> {
+    if (this.messageBus) {
+      await this.messageBus.publish(type as any, payload);
+    }
   }
 
   private generateSummary(entries: JsonEntry[]): string {

@@ -39,7 +39,7 @@ const messageBus = new SqliteMessageBus(join(DATA_DIR, 'bus.db'));
 // Initialize domain services
 const lockService = new OpenClawLockAdapter();
 const sessionRepository = new FileSystemSessionRepository(AGENTS_DIR, lockService);
-const sessionService = new SessionService(sessionRepository, lockService);
+const sessionService = new SessionService(sessionRepository, lockService, messageBus);
 const externalStorage = new ExternalStorage({ sessionsDir: AGENTS_DIR });
 const pruneService = new PruneService(sessionRepository, lockService, externalStorage, AGENTS_DIR);
 const trashRepository = new FileSystemTrashRepository(AGENTS_DIR);
