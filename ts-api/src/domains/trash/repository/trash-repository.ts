@@ -1,7 +1,6 @@
 import { readdir, readFile, rename, access, mkdir, rm } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
-import type { SessionEntry } from '../session/models/entry.js';
-import { NotFoundError } from '../../shared/errors/index.js';
+import { NotFoundError } from '../../../shared/errors/index.js';
 
 export interface TrashedSession {
   id: string;

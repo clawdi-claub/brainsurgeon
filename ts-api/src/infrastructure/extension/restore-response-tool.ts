@@ -61,8 +61,8 @@ export class RestoreResponseTool {
 
       // Replace stub with full content
       const entry = session.entries[entryIndex];
-      if (entry.type === 'tool_result') {
-        entry.content = externalData.content;
+      if (entry && entry.type === 'tool_result') {
+        entry.content = externalData.content as any;
         entry.toolName = externalData.toolName;
       }
 

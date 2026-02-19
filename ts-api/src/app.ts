@@ -3,6 +3,9 @@ import { serve } from '@hono/node-server';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
+// Domain - Lock
+import { OpenClawLockAdapter } from './domains/lock/adapters/openclaw-lock-adapter.js';
+
 // Domain - Session
 import { FileSystemSessionRepository } from './domains/session/repository/session-repository.js';
 import { SessionService } from './domains/session/services/session-service.js';
@@ -17,17 +20,6 @@ import { createTrashRoutes } from './domains/trash/api/routes.js';
 // Infrastructure
 import { SqliteMessageBus } from './infrastructure/bus/sqlite-bus.js';
 import { ExternalStorage } from './infrastructure/external/storage.js';
-
-// Domain - Session
-import { FileSystemSessionRepository } from './domains/session/repository/session-repository.js';
-import { SessionService } from './domains/session/services/session-service.js';
-import { PruneService } from './domains/session/services/prune-service.js';
-import { createSessionRoutes } from './domains/session/api/routes.js';
-
-// Domain - Trash
-import { FileSystemTrashRepository } from './domains/trash/repository/trash-repository.js';
-import { TrashService } from './domains/trash/services/trash-service.js';
-import { createTrashRoutes } from './domains/trash/api/routes.js';
 
 // Config
 const PORT = Number(process.env.PORT) || 8000;
@@ -73,14 +65,12 @@ app.get('/agents', async (c) => {
 
 // Config endpoint
 app.get('/config', (c) => c.json({
-  autoRefreshInterval: 10000, // 10 seconds
+  autoRefreshInterval: 10000,
   version: '2.0.0',
 }));
 
 // Restart endpoint
 app.post('/restart', async (c) => {
-  // Signal graceful shutdown
-  // In production, systemd/Docker handles restart
   setTimeout(() => process.exit(0), 100);
   return c.json({ success: true, message: 'Restarting...' });
 });

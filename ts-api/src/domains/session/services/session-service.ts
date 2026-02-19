@@ -79,10 +79,8 @@ export class SessionService {
         throw new NotFoundError('Entry', entryId);
       }
 
-      session.entries[entryIndex] = {
-        ...session.entries[entryIndex],
-        ...updates,
-      };
+      const existingEntry = session.entries[entryIndex];
+      session.entries[entryIndex] = { ...existingEntry, ...updates } as typeof existingEntry;
 
       await this.sessionRepo.save(agentId, sessionId, session);
     } finally {

@@ -47,7 +47,7 @@ export class ExternalStorage {
     sessionId: string,
     entryId: string,
     content: unknown
-  ): Promise&lt;string&gt; {
+  ): Promise<string> {
     const externalDir = this.getExternalDir(agentId);
     await mkdir(externalDir, { recursive: true });
 
@@ -71,7 +71,7 @@ export class ExternalStorage {
   /**
    * Retrieve entry from external storage
    */
-  async retrieve(agentId: string, entryId: string): Promise&lt;unknown | null&gt; {
+  async retrieve(agentId: string, entryId: string): Promise<unknown | null> {
     const filePath = join(this.getExternalDir(agentId), `${entryId}.json`);
 
     try {
@@ -88,7 +88,7 @@ export class ExternalStorage {
   /**
    * Check if entry exists in external storage
    */
-  async exists(agentId: string, entryId: string): Promise&lt;boolean&gt; {
+  async exists(agentId: string, entryId: string): Promise<boolean> {
     const filePath = join(this.getExternalDir(agentId), `${entryId}.json`);
 
     try {
@@ -103,7 +103,7 @@ export class ExternalStorage {
    * Delete entry from external storage
    * Called after successful rehydration
    */
-  async delete(agentId: string, entryId: string): Promise&lt;void&gt; {
+  async delete(agentId: string, entryId: string): Promise<void> {
     const filePath = join(this.getExternalDir(agentId), `${entryId}.json`);
 
     try {
@@ -116,7 +116,7 @@ export class ExternalStorage {
   /**
    * Get all externalized entry IDs for an agent
    */
-  async list(agentId: string): Promise&lt;string[]&gt; {
+  async list(agentId: string): Promise<string[]> {
     const keepListPath = this.getKeepListPath(agentId);
 
     try {
@@ -132,7 +132,7 @@ export class ExternalStorage {
    * Cleanup entries older than TTL
    * Should be called periodically
    */
-  async cleanup(): Promise&lt;number&gt; {
+  async cleanup(): Promise<number> {
     const ttlMs = (this.config.ttlDays || 30) * 24 * 60 * 60 * 1000;
     const cutoff = Date.now() - ttlMs;
     let deleted = 0;
@@ -143,7 +143,7 @@ export class ExternalStorage {
     return deleted;
   }
 
-  private async updateKeepList(agentId: string, entryId: string): Promise&lt;void&gt; {
+  private async updateKeepList(agentId: string, entryId: string): Promise<void> {
     const keepListPath = this.getKeepListPath(agentId);
     const entries = await this.list(agentId);
 

@@ -3,7 +3,7 @@ import { writeFile, mkdir, rm, access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { OpenClawLockAdapter } from '../src/domains/lock/adapters/openclaw-lock-adapter.js';
+import { OpenClawLockAdapter } from '../domains/lock/adapters/openclaw-lock-adapter.js';
 
 const TEMP_DIR = join(tmpdir(), 'brainsurgeon-test-' + randomUUID());
 
