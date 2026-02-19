@@ -119,6 +119,9 @@ function closeCustomModal() {
 function closeViewModal() {
     stopAutoRefresh();
     document.getElementById('viewModal').classList.remove('active');
+    // Hide indicator when modal closes
+    const indicator = document.getElementById('autoRefreshIndicator');
+    if (indicator) indicator.style.display = 'none';
 }
 
 // Load agents
@@ -1043,7 +1046,9 @@ function startAutoRefresh(agent, id) {
     currentViewSession = { agent, id };
     
     const indicator = document.getElementById('autoRefreshIndicator');
+    const dot = indicator?.querySelector('.refresh-dot');
     if (indicator) indicator.style.display = 'flex';
+    if (dot) dot.classList.remove('stopped');
     
     autoRefreshInterval = setInterval(async () => {
         if (!document.getElementById('viewModal').classList.contains('active')) {
@@ -1083,7 +1088,8 @@ function stopAutoRefresh() {
         autoRefreshInterval = null;
     }
     const indicator = document.getElementById('autoRefreshIndicator');
-    if (indicator) indicator.style.display = 'none';
+    const dot = indicator?.querySelector('.refresh-dot');
+    if (dot) dot.classList.add('stopped');
 }
 
 // View session - DEFAULT to view now

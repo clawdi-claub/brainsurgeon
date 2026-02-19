@@ -803,9 +803,14 @@ body {
 .refresh-dot {
     width: 8px;
     height: 8px;
-    background: var(--accent-red);
+    background: var(--accent-green);
     border-radius: 50%;
     animation: pulse 2s infinite;
+}
+
+.refresh-dot.stopped {
+    background: var(--accent-red);
+    animation: none;
 }
 
 @keyframes pulse {
