@@ -82,6 +82,50 @@ apiApp.post('/restart', async (c) => {
   return c.json({ success: true, message: 'Restarting...' });
 });
 
+// Event endpoints for OpenClaw extension integration
+apiApp.post('/events/message-written', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  
+  // Store event in message bus
+  await messageBus.publish('session.updated', {
+    agentId: body.agentId || body.agent,
+    sessionId: body.sessionId || body.session,
+    entryCount: body.entryCount || body.entryIndex,
+    lastEntryType: body.entryType || 'message',
+    timestamp: body.timestamp || new Date().toISOString(),
+  });
+  
+  return c.json({ received: true, event: 'message_written' });
+});
+
+apiApp.post('/events/session-created', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  
+  await messageBus.publish('session.updated', {  // Use existing type
+    agentId: body.agentId || body.agent,
+    sessionId: body.sessionId || body.session,
+    entryCount: 0,
+    lastEntryType: 'session_created',
+    timestamp: body.timestamp || new Date().toISOString(),
+  });
+  
+  return c.json({ received: true, event: 'session_created' });
+});
+
+apiApp.post('/events/entry-restored', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  
+  await messageBus.publish('restore.response', {
+    agentId: body.agentId,
+    sessionId: body.sessionId,
+    toolCallId: body.toolcallid,
+    success: true,
+    timestamp: body.timestamp || new Date().toISOString(),
+  });
+  
+  return c.json({ received: true, event: 'entry_restored' });
+});
+
 // Error handler
 apiApp.onError((err, c) => {
   console.error('Error:', err);

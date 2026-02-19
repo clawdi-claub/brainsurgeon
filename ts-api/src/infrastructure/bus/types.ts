@@ -4,6 +4,9 @@
 export type MessageType = 
   | 'session.updated'      // Transcript updated
   | 'session.compacted'    // Session compacted
+  | 'session.created'      // New session created
+  | 'message_written'      // New message added to session
+  | 'entry_restored'       // Pruned entry restored
   | 'prune.request'        // Request pruning
   | 'prune.response'       // Pruning complete
   | 'restore.request'      // Request restore_response
