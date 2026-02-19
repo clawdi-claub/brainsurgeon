@@ -1360,19 +1360,19 @@ body {
 
     /* View controls - compact bar, all on one line */
     .view-controls {
-        padding: 8px 16px;
+        padding: 6px 12px;
         flex-direction: row;
         flex-wrap: nowrap;
-        gap: 12px;
+        gap: 8px;
         align-items: center;
         flex-shrink: 0;
         border-bottom: 1px solid var(--border);
     }
 
     .view-controls .filter-group {
-        flex: 1;
+        flex: 0 0 auto;
         justify-content: flex-start;
-        gap: 8px;
+        gap: 6px;
         flex-wrap: nowrap;
     }
 
@@ -1495,23 +1495,25 @@ body {
         height: 6px;
     }
 
-    /* Filter items - compact for single line */
+    /* Filter items - ultra compact for single line */
     .filter-item {
         display: flex;
         align-items: center;
-        gap: 4px;
+        gap: 3px;
         flex-shrink: 0;
     }
 
     .filter-label {
-        font-size: 0.7rem;
+        font-size: 0.65rem;
         white-space: nowrap;
+        color: var(--text-tertiary);
     }
 
     .filter-select {
         font-size: 0.7rem;
-        padding: 3px 6px;
+        padding: 2px 4px;
         min-width: auto;
+        max-width: 110px;
     }
 
     /* Session ID and clipboard */
