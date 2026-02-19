@@ -701,23 +701,18 @@ function renderEntryContentNormal(entry) {
             
             // Handle content
             if (typeof content === 'string') {
-                html += `<div class="content-text">${escapeHtml(content).replace(/\n/g, '<br>')}</div>`;
+                html += renderCollapsibleText(content, 'text');
             } else if (Array.isArray(content)) {
                 content.forEach(item => {
                     if (item.type === 'text') {
-                        const text = item.text || '';
-                        html += `<div class="content-text">${escapeHtml(text).replace(/\n/g, '<br>')}</div>`;
+                        html += renderCollapsibleText(item.text || '', 'text');
                     } else if (item.type === 'thinking') {
                         const thinking = item.thinking || '';
                         html += `<details class="thinking-block"><summary>🧠 Thinking</summary><div class="thinking-content">${escapeHtml(thinking).replace(/\n/g, '<br>')}</div></details>`;
                     } else if (item.type === 'toolCall') {
-                        const name = item.name || item.function?.name || 'unknown';
-                        const args = item.arguments || item.function?.arguments || '{}';
-                        const argsObj = typeof args === 'string' ? JSON.parse(args) : args;
-                        html += renderKeyValueList({ 'Tool': name, 'Arguments': argsObj }, 0);
+                        html += renderCollapsibleToolCall(item);
                     } else if (item.type === 'toolResult') {
-                        const text = item.text || '';
-                        html += `<details class="tool-result-block"><summary>📥 Tool Result</summary><div class="tool-result-content">${escapeHtml(text).replace(/\n/g, '<br>')}</div></details>`;
+                        html += renderCollapsibleToolResult(item);
                     } else {
                         html += renderKeyValueList(item, 0);
                     }
@@ -742,30 +737,12 @@ function renderEntryContentNormal(entry) {
         
         // For tool entries
         if (entry.type === 'tool' || entry.type === 'toolCall') {
-            const name = entry.name || entry.function?.name || 'unknown';
-            const args = entry.arguments || entry.function?.arguments || '{}';
-            const argsObj = typeof args === 'string' ? JSON.parse(args) : args;
-            return renderKeyValueList({ 'Tool': name, 'Arguments': argsObj }, 0);
+            return renderCollapsibleToolCall(entry);
         }
         
         // For tool_result entries
         if (entry.type === 'tool_result' || entry.type === 'toolResult') {
-            const content = entry.content;
-            if (Array.isArray(content)) {
-                let html = '';
-                content.forEach(item => {
-                    if (item.type === 'text') {
-                        html += `<div class="content-text">${escapeHtml(item.text || '').replace(/\n/g, '<br>')}</div>`;
-                    } else {
-                        html += renderKeyValueList(item, 0);
-                    }
-                });
-                return html;
-            } else if (typeof content === 'string') {
-                return `<div class="content-text">${escapeHtml(content).replace(/\n/g, '<br>')}</div>`;
-            } else if (typeof content === 'object' && content !== null) {
-                return renderKeyValueList(content, 0);
-            }
+            return renderCollapsibleToolResult(entry);
         }
         
         // For system/custom entries - render as key/value list
@@ -773,6 +750,51 @@ function renderEntryContentNormal(entry) {
     } catch (e) {
         return escapeHtml(String(entry));
     }
+}
+
+// Helper: Render text with collapsible wrapper if long
+function renderCollapsibleText(text, type = 'text') {
+    if (!text || typeof text !== 'string') {
+        return '<div class="content-text"></div>';
+    }
+    
+    const lineCount = text.split('\n').length;
+    const charCount = text.length;
+    const isLong = charCount > 500 || lineCount > 8;
+    
+    if (!isLong) {
+        return `<div class="content-text">${escapeHtml(text).replace(/\n/g, '<br>')}</div>`;
+    }
+    
+    // Truncate preview for summary
+    const preview = text.substring(0, 80).replace(/\n/g, ' ') + (text.length > 80 ? '...' : '');
+    const label = type === 'thinking' ? '🧠 Thinking' : '📝 Content';
+    
+    return `<details class="collapsible-text-block"><summary>${label} (${charCount} chars, ${lineCount} lines)</summary><div class="collapsible-text-content">${escapeHtml(text).replace(/\n/g, '<br>')}</div></details>`;
+}
+
+// Helper: Render tool call with collapsible wrapper
+function renderCollapsibleToolCall(item) {
+    const name = item.name || item.function?.name || 'unknown';
+    const args = item.arguments || item.function?.arguments || '{}';
+    const argsObj = typeof args === 'string' ? JSON.parse(args) : args;
+    const argsHtml = renderKeyValueList({ 'Arguments': argsObj }, 0);
+    
+    return `<details class="collapsible-tool-block"><summary>🔧 Tool: ${escapeHtml(name)}</summary><div class="collapsible-tool-content">${argsHtml}</div></details>`;
+}
+
+// Helper: Render tool result with collapsible wrapper
+function renderCollapsibleToolResult(item) {
+    const text = item.text || '';
+    const lineCount = text.split('\n').length;
+    const charCount = text.length;
+    const isLong = charCount > 300 || lineCount > 5;
+    
+    if (!isLong) {
+        return `<details class="tool-result-block"><summary>📥 Tool Result</summary><div class="tool-result-content">${escapeHtml(text).replace(/\n/g, '<br>')}</div></details>`;
+    }
+    
+    return `<details class="tool-result-block"><summary>📥 Tool Result (${charCount} chars, ${lineCount} lines)</summary><div class="tool-result-content">${escapeHtml(text).replace(/\n/g, '<br>')}</div></details>`;
 }
 
 function renderKeyValueList(obj, depth = 0, isNested = false) {
