@@ -116,13 +116,24 @@ function closeCustomModal() {
     document.getElementById('customModal').classList.remove('active');
 }
 
-function closeViewModal() {
+function closeViewModal(fromPopState = false) {
     stopAutoRefresh();
     document.getElementById('viewModal').classList.remove('active');
     // Hide indicator when modal closes
     const indicator = document.getElementById('autoRefreshIndicator');
     if (indicator) indicator.style.display = 'none';
+    // If closed by user (not browser back), pop the history state we pushed
+    if (!fromPopState && history.state && history.state.viewModal) {
+        history.back();
+    }
 }
+
+// Close view modal when browser back button is pressed
+window.addEventListener('popstate', (e) => {
+    if (document.getElementById('viewModal').classList.contains('active')) {
+        closeViewModal(true);
+    }
+});
 
 // Load agents
 // Restart OpenClaw dialog
@@ -1163,6 +1174,8 @@ async function viewSession(agent, id) {
     window._currentSessionId = id;
     
     document.getElementById('viewModal').classList.add('active');
+    // Push history state so back button closes the modal
+    history.pushState({ viewModal: true, agent, id }, '', `#view=${agent}/${id}`);
     
     // Set truncated session ID as the header
     const truncatedId = id.length > 20 ? id.substring(0, 8) + '...' + id.substring(id.length - 4) : id;
