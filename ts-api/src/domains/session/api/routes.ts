@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { SessionService } from '../services/session-service.js';
 import type { PruneService } from '../services/prune-service.js';
+import { mapSessionListItem, mapSessionDetail } from './response-mapper.js';
 
 export function createSessionRoutes(
   sessionService: SessionService,
@@ -11,26 +12,32 @@ export function createSessionRoutes(
   // GET /sessions?agent=&status=
   app.get('/', async (c) => {
     const agentId = c.req.query('agent');
-    const status = c.req.query('status'); // not implemented yet
-    
-    const sessions = await sessionService.listSessions(agentId);
-    
+    const status = c.req.query('status');
+
+    let sessions = await sessionService.listSessions(agentId);
+
     if (status) {
-      // Filter by status
-      return c.json(sessions.filter(s => s.status === status));
+      sessions = sessions.filter(s => s.status === status);
     }
-    
-    return c.json(sessions);
+
+    const mapped = sessions.map(mapSessionListItem);
+    const agents = [...new Set(sessions.map(s => s.agentId))];
+
+    return c.json({
+      sessions: mapped,
+      agents,
+      total_size: 0,
+    });
   });
 
   // GET /sessions/:agent/:id
   app.get('/:agent/:id', async (c) => {
     const agentId = c.req.param('agent');
     const sessionId = c.req.param('id');
-    
+
     try {
       const session = await sessionService.getSession(agentId, sessionId);
-      return c.json(session);
+      return c.json(mapSessionDetail(session));
     } catch (error) {
       if (error instanceof Error && error.name === 'NotFoundError') {
         return c.json({ error: error.message }, 404);
@@ -43,7 +50,7 @@ export function createSessionRoutes(
   app.get('/:agent/:id/summary', async (c) => {
     const agentId = c.req.param('agent');
     const sessionId = c.req.param('id');
-    
+
     try {
       const summary = await sessionService.getSummary(agentId, sessionId);
       return c.json(summary);
@@ -60,10 +67,10 @@ export function createSessionRoutes(
     const agentId = c.req.param('agent');
     const sessionId = c.req.param('id');
     const body = await c.req.json().catch(() => ({}));
-    
+
     try {
       const result = await pruneService.execute(agentId, sessionId, {
-        keepRecent: body.keepRecent,
+        keepRecent: body.keepRecent ?? body.keep_recent,
         threshold: body.threshold,
       });
       return c.json(result);
@@ -79,7 +86,7 @@ export function createSessionRoutes(
   app.delete('/:agent/:id', async (c) => {
     const agentId = c.req.param('agent');
     const sessionId = c.req.param('id');
-    
+
     try {
       await sessionService.deleteSession(agentId, sessionId);
       return c.json({ success: true });
@@ -91,19 +98,26 @@ export function createSessionRoutes(
     }
   });
 
-  // PATCH /sessions/:agent/:id/entries/:entryId
-  app.patch('/:agent/:id/entries/:entryId', async (c) => {
+  // PUT /sessions/:agent/:id/entries/:index (Python API parity)
+  app.put('/:agent/:id/entries/:index', async (c) => {
     const agentId = c.req.param('agent');
     const sessionId = c.req.param('id');
-    const entryId = c.req.param('entryId');
+    const index = parseInt(c.req.param('index'), 10);
     const body = await c.req.json().catch(() => ({}));
-    
+
+    if (isNaN(index) || index < 0) {
+      return c.json({ error: 'Invalid entry index' }, 400);
+    }
+
     try {
-      await sessionService.editEntry(agentId, sessionId, entryId, body);
-      return c.json({ success: true });
+      await sessionService.editEntryByIndex(agentId, sessionId, index, body.entry);
+      return c.json({ updated: true, index });
     } catch (error) {
       if (error instanceof Error && error.name === 'NotFoundError') {
         return c.json({ error: error.message }, 404);
+      }
+      if (error instanceof Error && error.message.includes('Invalid entry index')) {
+        return c.json({ error: error.message }, 400);
       }
       throw error;
     }

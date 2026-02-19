@@ -14,6 +14,7 @@ export interface TrashRepository {
   list(): Promise<TrashedSession[]>;
   restore(agentId: string, sessionId: string): Promise<void>;
   deletePermanently(agentId: string, sessionId: string): Promise<void>;
+  cleanupExpired(retentionDays?: number): Promise<number>;
 }
 
 export class FileSystemTrashRepository implements TrashRepository {
@@ -94,5 +95,42 @@ export class FileSystemTrashRepository implements TrashRepository {
     }
 
     await rm(trashPath);
+  }
+
+  async cleanupExpired(retentionDays = 14): Promise<number> {
+    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    const trashDir = this.getTrashDir();
+    let cleaned = 0;
+
+    try {
+      await access(trashDir);
+    } catch {
+      return 0;
+    }
+
+    const agents = await readdir(trashDir);
+
+    for (const agentId of agents) {
+      const agentDir = join(trashDir, agentId);
+      const files = await readdir(agentDir).catch(() => []);
+
+      for (const file of files) {
+        if (!file.endsWith('.jsonl')) continue;
+        const filePath = join(agentDir, file);
+
+        try {
+          const { stat } = await import('node:fs/promises');
+          const stats = await stat(filePath);
+          if (stats.mtimeMs < cutoff) {
+            await rm(filePath);
+            cleaned++;
+          }
+        } catch {
+          // Skip files we can't stat
+        }
+      }
+    }
+
+    return cleaned;
   }
 }

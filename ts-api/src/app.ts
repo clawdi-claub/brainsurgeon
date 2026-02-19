@@ -56,7 +56,7 @@ apiApp.route('/sessions', sessionRoutes);
 const trashRoutes = createTrashRoutes(trashService);
 apiApp.route('/trash', trashRoutes);
 
-// Agents endpoint
+// Agents endpoint - returns list of agent IDs
 apiApp.get('/agents', async (c) => {
   const sessions = await sessionService.listSessions();
   const agents = [...new Set(sessions.map(s => s.agentId))];

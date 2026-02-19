@@ -67,25 +67,33 @@ export class SessionService {
     entryId: string,
     updates: Partial<SessionEntry>
   ): Promise<void> {
-    const lock = await this.lockService.acquire(
-      this.resolveSessionFile(agentId, sessionId)
-    );
+    const session = await this.sessionRepo.load(agentId, sessionId);
 
-    try {
-      const session = await this.sessionRepo.load(agentId, sessionId);
-      
-      const entryIndex = session.entries.findIndex(e => e.id === entryId);
-      if (entryIndex === -1) {
-        throw new NotFoundError('Entry', entryId);
-      }
-
-      const existingEntry = session.entries[entryIndex];
-      session.entries[entryIndex] = { ...existingEntry, ...updates } as typeof existingEntry;
-
-      await this.sessionRepo.save(agentId, sessionId, session);
-    } finally {
-      await lock.release();
+    const entryIndex = session.entries.findIndex(e => e.id === entryId);
+    if (entryIndex === -1) {
+      throw new NotFoundError('Entry', entryId);
     }
+
+    const existingEntry = session.entries[entryIndex];
+    session.entries[entryIndex] = { ...existingEntry, ...updates } as typeof existingEntry;
+
+    await this.sessionRepo.save(agentId, sessionId, session);
+  }
+
+  async editEntryByIndex(
+    agentId: string,
+    sessionId: string,
+    index: number,
+    replacement: Record<string, unknown>
+  ): Promise<void> {
+    const session = await this.sessionRepo.load(agentId, sessionId);
+
+    if (index < 0 || index >= session.entries.length) {
+      throw new Error(`Invalid entry index: ${index}`);
+    }
+
+    session.entries[index] = replacement as unknown as SessionEntry;
+    await this.sessionRepo.save(agentId, sessionId, session);
   }
 
   private generateSummary(entries: SessionEntry[]): string {

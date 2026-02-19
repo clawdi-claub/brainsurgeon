@@ -26,6 +26,12 @@ export function createTrashRoutes(trashService: TrashService): Hono {
     }
   });
 
+  // POST /trash/cleanup - Delete expired trash items
+  app.post('/cleanup', async (c) => {
+    const cleaned = await trashService.cleanup();
+    return c.json({ cleaned });
+  });
+
   // DELETE /trash/:agent/:id (permanent delete)
   app.delete('/:agent/:id', async (c) => {
     const agentId = c.req.param('agent');

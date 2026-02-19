@@ -14,4 +14,8 @@ export class TrashService {
   async deletePermanently(agentId: string, sessionId: string): Promise<void> {
     await this.trashRepo.deletePermanently(agentId, sessionId);
   }
+
+  async cleanup(): Promise<number> {
+    return this.trashRepo.cleanupExpired();
+  }
 }
