@@ -520,13 +520,22 @@ def generate_session_summary(entries: list[dict]) -> dict:
             content = msg.get("content", "")
             
             if role == "assistant":
-                # Check for tool calls
+                # Check for tool_calls field (OpenAI format)
                 if msg.get("tool_calls"):
                     summary["tool_calls"] += len(msg.get("tool_calls", []))
                     for tc in msg.get("tool_calls", []):
                         tool_name = tc.get("name") or tc.get("function", {}).get("name")
                         if tool_name:
                             summary["tools_used"].add(tool_name)
+                
+                # Check for toolCall in content array (OpenClaw format)
+                if isinstance(content, list):
+                    for item in content:
+                        if isinstance(item, dict) and item.get("type") == "toolCall":
+                            summary["tool_calls"] += 1
+                            tool_name = item.get("name") or (item.get("params", {}).get("tool") if isinstance(item.get("params"), dict) else None)
+                            if tool_name:
+                                summary["tools_used"].add(tool_name)
                 
                 # Extract thinking insights (high value content)
                 if isinstance(content, list):
@@ -751,8 +760,15 @@ def get_session(request: Request, agent: str, session_id: str, api_key: str = De
         if entry.get("type") == "message":
             messages += 1
             msg = entry.get("message", {})
+            # Check for tool_calls field (OpenAI format)
             if msg.get("tool_calls"):
                 tool_calls += len(msg.get("tool_calls", []))
+            # Check for toolCall in content array (OpenClaw format)
+            content = msg.get("content", [])
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "toolCall":
+                        tool_calls += 1
 
     # Extract fields from sessions.json with correct field names
     channel = session_meta.get("lastChannel") if session_meta else None

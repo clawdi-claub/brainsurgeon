@@ -102,7 +102,51 @@
 
             <!-- Session Details Panel -->
             <div class="session-details-panel" id="sessionDetailsPanel">
-                <!-- Metadata from sessions.json - Collapsible -->
+                <!-- General session info -->
+                <div class="details-grid">
+                    <div class="detail-item">
+                        <span class="detail-label">Agent</span>
+                        <span class="detail-value" id="detailAgent">—</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Size</span>
+                        <span class="detail-value" id="detailSize">—</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Messages</span>
+                        <span class="detail-value" id="detailMessages">—</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Tool Calls</span>
+                        <span class="detail-value" id="detailTools">—</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Duration</span>
+                        <span class="detail-value" id="detailDuration">—</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Created</span>
+                        <span class="detail-value" id="detailCreated">—</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Updated</span>
+                        <span class="detail-value" id="detailUpdated">—</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Status</span>
+                        <span class="detail-value" id="detailStatus">—</span>
+                    </div>
+                </div>
+                <div class="detail-row" id="detailParentRow" style="display: none;">
+                    <span class="detail-label">Parent:</span>
+                    <span class="detail-value" id="detailParent">—</span>
+                </div>
+                <div class="detail-row" id="detailChildrenRow" style="display: none;">
+                    <span class="detail-label">Children:</span>
+                    <span class="detail-value" id="detailChildren">—</span>
+                </div>
+
+                <!-- Metadata from sessions.json - Collapsible (moved after general info) -->
                 <div class="metadata-section">
                     <div class="metadata-header" onclick="toggleMetadata()">
                         <span class="metadata-toggle">▶</span>
@@ -150,49 +194,6 @@
                             <span class="detail-value" id="metaHistory">—</span>
                         </div>
                     </div>
-                </div>
-
-                <div class="details-grid">
-                    <div class="detail-item">
-                        <span class="detail-label">Agent</span>
-                        <span class="detail-value" id="detailAgent">—</span>
-                    </div>
-                    <div class="detail-item">
-                        <span class="detail-label">Size</span>
-                        <span class="detail-value" id="detailSize">—</span>
-                    </div>
-                    <div class="detail-item">
-                        <span class="detail-label">Messages</span>
-                        <span class="detail-value" id="detailMessages">—</span>
-                    </div>
-                    <div class="detail-item">
-                        <span class="detail-label">Tool Calls</span>
-                        <span class="detail-value" id="detailTools">—</span>
-                    </div>
-                    <div class="detail-item">
-                        <span class="detail-label">Duration</span>
-                        <span class="detail-value" id="detailDuration">—</span>
-                    </div>
-                    <div class="detail-item">
-                        <span class="detail-label">Created</span>
-                        <span class="detail-value" id="detailCreated">—</span>
-                    </div>
-                    <div class="detail-item">
-                        <span class="detail-label">Updated</span>
-                        <span class="detail-value" id="detailUpdated">—</span>
-                    </div>
-                    <div class="detail-item">
-                        <span class="detail-label">Status</span>
-                        <span class="detail-value" id="detailStatus">—</span>
-                    </div>
-                </div>
-                <div class="detail-row" id="detailParentRow" style="display: none;">
-                    <span class="detail-label">Parent:</span>
-                    <span class="detail-value" id="detailParent">—</span>
-                </div>
-                <div class="detail-row" id="detailChildrenRow" style="display: none;">
-                    <span class="detail-label">Children:</span>
-                    <span class="detail-value" id="detailChildren">—</span>
                 </div>
             </div>
 
