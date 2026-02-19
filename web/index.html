@@ -187,10 +187,6 @@
                         <span class="detail-value" id="detailStatus">—</span>
                     </div>
                 </div>
-                <div class="detail-row">
-                    <span class="detail-label">Models Used:</span>
-                    <span class="detail-value" id="detailModels">—</span>
-                </div>
                 <div class="detail-row" id="detailParentRow" style="display: none;">
                     <span class="detail-label">Parent:</span>
                     <span class="detail-value" id="detailParent">—</span>
@@ -223,8 +219,8 @@
                         </select>
                     </div>
                 </div>
-                <div class="auto-refresh-indicator" id="autoRefreshIndicator" style="display: none;">
-                    <span class="refresh-dot"></span> Auto-refreshing
+                <div class="auto-refresh-indicator" id="autoRefreshIndicator" style="display: none;" onclick="stopAutoRefresh()" title="Click to stop auto-refresh">
+                    <span class="refresh-dot"></span>
                 </div>
             </div>
 

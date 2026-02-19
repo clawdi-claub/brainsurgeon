@@ -1016,7 +1016,7 @@ function startAutoRefresh(agent, id) {
         } catch (e) {
             // Silent fail on auto-refresh
         }
-    }, 30000); // 30 seconds
+    }, 10000); // 10 seconds
 }
 
 function stopAutoRefresh() {
@@ -1095,19 +1095,7 @@ async function viewSession(agent, id) {
             }
         });
         
-        if (models.length > 0) {
-            // Last model is the active one
-            const activeModel = models[models.length - 1];
-            document.getElementById('detailModels').innerHTML = models.map((m, idx) => {
-                const isActive = idx === models.length - 1;
-                const className = isActive ? 'session-model' : 'session-model inactive';
-                return `<span class="${className}" style="font-family: monospace; font-size: 0.8rem;">${escapeHtml(m)}</span>`;
-            }).join(' ');
-        } else {
-            document.getElementById('detailModels').innerHTML = '<span style="color: var(--text-tertiary)">—</span>';
-        }
-
-        // Show models in header too - only active is green
+        // Show models in header - only active is green
         if (models.length > 0) {
             const activeModel = models[models.length - 1];
             document.getElementById('modalModels').innerHTML = models.slice(-3).map((m, idx) => {

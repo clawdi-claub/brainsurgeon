@@ -794,9 +794,9 @@ body {
 .auto-refresh-indicator {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 0.75rem;
-    color: var(--accent-cyan);
+    justify-content: center;
+    cursor: pointer;
+    padding: 4px;
 }
 
 .refresh-dot {
@@ -1358,12 +1358,12 @@ body {
         min-width: 70px;
     }
 
-    /* View controls - compact bar */
+    /* View controls - compact bar, all on one line */
     .view-controls {
         padding: 8px 16px;
         flex-direction: row;
-        flex-wrap: wrap;
-        gap: 8px;
+        flex-wrap: nowrap;
+        gap: 12px;
         align-items: center;
         flex-shrink: 0;
         border-bottom: 1px solid var(--border);
@@ -1372,6 +1372,8 @@ body {
     .view-controls .filter-group {
         flex: 1;
         justify-content: flex-start;
+        gap: 8px;
+        flex-wrap: nowrap;
     }
 
     /* Entries list takes ALL remaining space */
@@ -1481,21 +1483,35 @@ body {
         max-height: 60vh;
     }
 
-    /* Auto-refresh indicator smaller */
+    /* Auto-refresh indicator - just the dot */
     .auto-refresh-indicator {
         font-size: 0.7rem;
+        padding: 4px;
+        flex-shrink: 0;
     }
 
-    /* Filter items grouping */
+    .refresh-dot {
+        width: 6px;
+        height: 6px;
+    }
+
+    /* Filter items - compact for single line */
     .filter-item {
         display: flex;
         align-items: center;
         gap: 4px;
+        flex-shrink: 0;
     }
 
     .filter-label {
-        font-size: 0.75rem;
+        font-size: 0.7rem;
         white-space: nowrap;
+    }
+
+    .filter-select {
+        font-size: 0.7rem;
+        padding: 3px 6px;
+        min-width: auto;
     }
 
     /* Session ID and clipboard */
