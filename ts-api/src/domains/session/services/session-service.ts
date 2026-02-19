@@ -110,7 +110,7 @@ export class SessionService {
   private generateSummary(entries: JsonEntry[]): string {
     // Basic summary - first user message + last assistant message
     const firstUser = entries.find(e => e.type === 'message' && e.role === 'user');
-    const lastAssistant = entries.reverse().find(e => e.type === 'message' && e.role === 'assistant');
+    const lastAssistant = [...entries].reverse().find(e => e.type === 'message' && e.role === 'assistant');
     
     let summary = '';
     

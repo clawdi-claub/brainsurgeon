@@ -228,42 +228,30 @@ async function restoreRemoteContent(
       // Restore the specified keys
       const restoredKeys: string[] = [];
       
-      function restoreInObject(obj: any, path: string[] = []): void {
+      function restoreInObject(obj: any, pathPrefix: string[] = []): void {
         for (const key of Object.keys(obj)) {
-          const currentPath = [...path, key];
-          const fullKey = currentPath.join('.');
+          const fullPath = [...pathPrefix, key];
+          const fullKey = fullPath.join('.');
           
           if (obj[key] === '[[extracted]]') {
-            // This key was extracted - restore it
-            const extractedValue = getNestedValue(extractedData, currentPath);
+            const extractedValue = getNestedValue(extractedData, fullPath);
             if (extractedValue !== undefined) {
-              setNestedValue(obj, currentPath, extractedValue);
+              obj[key] = extractedValue;
               restoredKeys.push(fullKey);
             }
           } else if (typeof obj[key] === 'object' && obj[key] !== null) {
-            // Recurse into nested objects
-            restoreInObject(obj[key], currentPath);
+            restoreInObject(obj[key], fullPath);
           }
         }
       }
       
-      // Helper to get nested value from extracted data
-      function getNestedValue(data: any, path: string[]): any {
+      function getNestedValue(data: any, keyPath: string[]): any {
         let current = data;
-        for (const key of path) {
+        for (const key of keyPath) {
           if (current === null || typeof current !== 'object') return undefined;
           current = current[key];
         }
         return current;
-      }
-      
-      // Helper to set nested value
-      function setNestedValue(obj: any, path: string[], value: any): void {
-        let current = obj;
-        for (let i = 0; i < path.length - 1; i++) {
-          current = current[path[i]];
-        }
-        current[path[path.length - 1]] = value;
       }
       
       // Perform restoration
