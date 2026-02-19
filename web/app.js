@@ -587,12 +587,39 @@ async function confirmCompactSession() {
     if (!currentViewSession) return;
     const { agent, id } = currentViewSession;
     
-    // For now, show a message that compact is not yet implemented
-    // This will use OpenClaw's built-in compaction when available
-    const bodyHtml = `<p>Session compaction will trigger OpenClaw's built-in context compaction.</p>
-        <p>This feature requires OpenClaw integration via the <code>/sessions/{agent}/{id}/compact</code> endpoint.</p>`;
-    const footerHtml = `<button class="btn" onclick="closeCustomModal()">Cancel</button>`;
-    showCustomModal('Compact Session (Coming Soon)', bodyHtml, footerHtml);
+    try {
+        const response = await fetch(`/api/sessions/${agent}/${id}/compact`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            // Show success message
+            const bodyHtml = `<p>Session compaction triggered successfully!</p>
+                <p>${data.message || 'OpenClaw\'s built-in context compaction has been initiated.'}</p>`;
+            const footerHtml = `<button class="btn" onclick="closeCustomModal()">Close</button>`;
+            showCustomModal('Compact Session', bodyHtml, footerHtml);
+            
+            // Refresh session view to show updated state
+            if (document.getElementById('viewModal').classList.contains('active')) {
+                viewSession(agent, id);
+            }
+        } else {
+            // Show error message
+            const bodyHtml = `<p>Error triggering compaction:</p>
+                <p><code>${data.error || data.message || 'Unknown error'}</code></p>`;
+            const footerHtml = `<button class="btn" onclick="closeCustomModal()">Close</button>`;
+            showCustomModal('Compact Session Error', bodyHtml, footerHtml);
+        }
+    } catch (error) {
+        // Show error message
+        const bodyHtml = `<p>Error triggering compaction:</p>
+            <p><code>${error.message || 'Unknown error'}</code></p>`;
+        const footerHtml = `<button class="btn" onclick="closeCustomModal()">Close</button>`;
+        showCustomModal('Compact Session Error', bodyHtml, footerHtml);
+    }
 }
 
 function toggleMetadata() {
