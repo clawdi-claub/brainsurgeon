@@ -1,11 +1,39 @@
-FROM python:3.12-slim
+# BrainSurgeon TypeScript API
+# Multi-stage build
+
+# Stage 1: Build
+FROM node:22-alpine AS builder
+
+WORKDIR /build
+
+# Copy package files
+COPY ts-api/package*.json ./
+RUN npm ci
+
+# Copy source and build
+COPY ts-api/src ./src
+COPY ts-api/tsconfig.json ./
+RUN npm run build
+
+# Stage 2: Production
+FROM node:22-alpine
 
 WORKDIR /app
 
-RUN pip install fastapi uvicorn pydantic slowapi
+# Install production dependencies
+COPY ts-api/package*.json ./
+RUN npm ci --only=production
 
-COPY api/ ./api/
+# Copy built code
+COPY --from=builder /build/dist ./dist
 
-EXPOSE 8654
+# Create data directory
+RUN mkdir -p /data
 
-CMD ["python", "-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8654", "--proxy-headers"]
+EXPOSE 8000
+
+ENV PORT=8000
+ENV SESSIONS_DIR=/data/sessions
+ENV DATA_DIR=/data
+
+CMD ["node", "dist/app.js"]
