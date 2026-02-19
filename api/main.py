@@ -29,6 +29,9 @@ READONLY_MODE = os.environ.get("BRAINSURGEON_READONLY", "false").lower() == "tru
 CORS_ORIGINS = os.environ.get("BRAINSURGEON_CORS_ORIGINS", "http://localhost:8654,http://127.0.0.1:8654").split(",")
 API_KEY_NAME = "X-API-Key"
 
+# UI Configuration
+AUTO_REFRESH_INTERVAL_MS = int(os.environ.get("BRAINSURGEON_AUTO_REFRESH_MS", "10000"))  # Default 10 seconds
+
 # Setup audit logging
 audit_logger = logging.getLogger("brainsurgeon.audit")
 if not audit_logger.handlers:
@@ -309,6 +312,15 @@ def get_session_timestamps(filepath: Path) -> tuple[Optional[str], Optional[str]
         return created, updated, duration
     except:
         return entries[0], entries[-1], None
+
+
+@app.get("/config")
+def get_config():
+    """Get UI configuration."""
+    return {
+        "auto_refresh_interval_ms": AUTO_REFRESH_INTERVAL_MS,
+        "readonly_mode": READONLY_MODE
+    }
 
 
 @app.get("/agents")

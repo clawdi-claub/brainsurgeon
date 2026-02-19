@@ -4,6 +4,23 @@ let currentAgent = 'all';
 let currentStatusFilter = 'all';
 let currentTypeFilter = 'all';
 
+// Configuration (will be loaded from server)
+let config = {
+    auto_refresh_interval_ms: 10000  // Default 10 seconds
+};
+
+// Load configuration from server
+async function loadConfig() {
+    try {
+        const r = await fetch(`${API}/config`);
+        if (r.ok) {
+            config = await r.json();
+        }
+    } catch (e) {
+        // Use defaults
+    }
+}
+
 // User's locale for date formatting
 const USER_LOCALE = navigator.language || 'en-US';
 const USER_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -1057,7 +1074,7 @@ function startAutoRefresh(agent, id) {
         } catch (e) {
             // Silent fail on auto-refresh
         }
-    }, 10000); // 10 seconds
+    }, config.auto_refresh_interval_ms || 10000); // Use server config or default 10 seconds
 }
 
 function stopAutoRefresh() {
@@ -1078,9 +1095,8 @@ async function viewSession(agent, id) {
     window._currentSessionId = id;
     
     document.getElementById('viewModal').classList.add('active');
-    document.getElementById('modalTitle2').textContent = 'Loading...';
     
-    // Set truncated session ID with ellipsis
+    // Set truncated session ID as the header
     const truncatedId = id.length > 20 ? id.substring(0, 8) + '...' + id.substring(id.length - 4) : id;
     document.getElementById('modalId').textContent = truncatedId;
     document.getElementById('modalId').title = id; // Full ID on hover
@@ -1102,8 +1118,7 @@ async function viewSession(agent, id) {
         const r = await apiRequest(`${API}/sessions/${agent}/${id}`);
         const data = await r.json();
 
-        // Update header
-        document.getElementById('modalTitle2').textContent = data.label || id;
+        // Update header - session ID is the main title
         document.getElementById('modalId').textContent = id;
 
         // Update details panel
@@ -1529,6 +1544,9 @@ async function checkApiAuth() {
 
 // API Key input handling
 document.addEventListener('DOMContentLoaded', () => {
+    // Load config first
+    loadConfig();
+    
     const apiKeyInput = document.getElementById('apiKeyInput');
     if (apiKeyInput) {
         // Load saved API key

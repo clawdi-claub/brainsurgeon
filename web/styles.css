@@ -132,18 +132,19 @@ body {
     color: var(--text-primary);
 }
 
-/* Session ID container */
+/* Session ID container - now acts as header */
 .session-id-container {
     display: flex;
     align-items: center;
     gap: 8px;
     font-family: monospace;
-    font-size: 0.75rem;
-    color: var(--text-tertiary);
+    font-size: 1rem;
+    color: var(--text-primary);
+    font-weight: 500;
 }
 
 .session-id-text {
-    max-width: 200px;
+    max-width: 280px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -802,7 +803,7 @@ body {
 .refresh-dot {
     width: 8px;
     height: 8px;
-    background: var(--accent-green);
+    background: var(--accent-red);
     border-radius: 50%;
     animation: pulse 2s infinite;
 }
@@ -1485,7 +1486,6 @@ body {
 
     /* Auto-refresh indicator - just the dot */
     .auto-refresh-indicator {
-        font-size: 0.7rem;
         padding: 4px;
         flex-shrink: 0;
     }
@@ -1493,6 +1493,15 @@ body {
     .refresh-dot {
         width: 6px;
         height: 6px;
+    }
+
+    /* Session ID as header - mobile */
+    .session-id-container {
+        font-size: 0.9rem;
+    }
+
+    .session-id-text {
+        max-width: 200px;
     }
 
     /* Filter items - ultra compact for single line */
