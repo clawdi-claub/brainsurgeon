@@ -154,10 +154,16 @@ body {
     border: none;
     color: var(--text-tertiary);
     cursor: pointer;
-    font-size: 0.9rem;
     padding: 4px;
     border-radius: 4px;
     transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.clipboard-btn .material-icons-round {
+    font-size: 18px;
 }
 
 .clipboard-btn:hover {
@@ -318,24 +324,6 @@ body {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-
-.clipboard-btn {
-    background: none;
-    border: none;
-    color: var(--text-tertiary);
-    cursor: pointer;
-    font-size: 0.9rem;
-    padding: 4px;
-    border-radius: 4px;
-    transition: all 0.15s;
-}
-
-.clipboard-btn:hover {
-    color: var(--accent-cyan);
-    background: var(--bg-hover);
-}
-
-.clipboard-btn.copied {
     color: var(--accent-green);
 }
 
@@ -1323,16 +1311,22 @@ body {
         font-size: 1rem;
     }
 
-    /* Compact metadata toggle only */
+    /* Session details panel */
     .session-details-panel {
         padding: 8px 16px;
         flex-shrink: 0;
-        max-height: 50px;
-        overflow: hidden;
+        max-height: none;
+        overflow: visible;
     }
 
-    /* When metadata is expanded, give it reasonable space */
-    .session-details-panel:has(#metadataContent[style*="block"]) {
+    /* Metadata content - starts collapsed */
+    .metadata-content {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s ease;
+    }
+
+    .metadata-content.expanded {
         max-height: 40vh;
         overflow-y: auto;
     }

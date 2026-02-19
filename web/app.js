@@ -503,7 +503,8 @@ async function confirmDelete(agent, id) {
 function toggleMetadata() {
     const content = document.getElementById('metadataContent');
     const toggle = document.querySelector('.metadata-toggle');
-    const isExpanded = content.style.display !== 'none';
+    const isExpanded = content.classList.contains('expanded');
+    content.classList.toggle('expanded', !isExpanded);
     content.style.display = isExpanded ? 'none' : 'block';
     toggle.classList.toggle('expanded', !isExpanded);
 }
@@ -520,10 +521,10 @@ function copySessionId() {
         const btn = document.getElementById('modalIdCopyBtn');
         if (btn) {
             btn.classList.add('copied');
-            btn.textContent = '✓';
+            btn.innerHTML = '<span class="material-icons-round">check</span>';
             setTimeout(() => {
                 btn.classList.remove('copied');
-                btn.textContent = '📋';
+                btn.innerHTML = '<span class="material-icons-round">content_copy</span>';
             }, 1500);
         }
     }).catch(err => {
@@ -539,10 +540,10 @@ function copySessionId() {
             const btn = document.getElementById('modalIdCopyBtn');
             if (btn) {
                 btn.classList.add('copied');
-                btn.textContent = '✓';
+                btn.innerHTML = '<span class="material-icons-round">check</span>';
                 setTimeout(() => {
                     btn.classList.remove('copied');
-                    btn.textContent = '📋';
+                    btn.innerHTML = '<span class="material-icons-round">content_copy</span>';
                 }, 1500);
             }
         } catch (e) {

@@ -6,6 +6,7 @@
     <title>BrainSurgeon 🧠</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
     <link rel="stylesheet" href="styles.css?cb=69714a4">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
 </head>
 <body>
     <div class="app-header">
@@ -91,7 +92,9 @@
                     <div id="modalTitle2">Session</div>
                     <div class="session-id-container" id="modalIdContainer">
                         <span class="session-id-text" id="modalId"></span>
-                        <button class="clipboard-btn" id="modalIdCopyBtn" onclick="copySessionId()" title="Copy session ID">📋</button>
+                        <button class="clipboard-btn" id="modalIdCopyBtn" onclick="copySessionId()" title="Copy session ID">
+                            <span class="material-icons-round">content_copy</span>
+                        </button>
                     </div>
                     <div class="session-models" id="modalModels"></div>
                 </div>
