@@ -6,6 +6,9 @@
 import cron from 'node-cron';
 import type { BrainSurgeonConfigService } from '../../config/service/config-service.js';
 import type { SmartPruningConfig } from '../../config/model/config.js';
+import { createLogger } from '../../../shared/logging/logger.js';
+
+const log = createLogger('cron-service');
 
 export interface CronJob {
   name: string;
@@ -50,7 +53,7 @@ export class SmartPruningCronService implements CronService {
    */
   async start(): Promise<void> {
     if (this.isStarted) {
-      console.log('[Cron] Already started');
+      log.debug('cron service already started');
       return;
     }
 
@@ -69,7 +72,7 @@ export class SmartPruningCronService implements CronService {
     });
 
     this.isStarted = true;
-    console.log('[Cron] Service started');
+    log.info('cron service started');
   }
 
   /**
@@ -78,18 +81,18 @@ export class SmartPruningCronService implements CronService {
   stop(): void {
     for (const [name, task] of this.jobs) {
       task.stop();
-      console.log(`[Cron] Stopped job: ${name}`);
+      log.debug({ job: name }, 'stopped cron job');
     }
     this.jobs.clear();
     this.isStarted = false;
-    console.log('[Cron] Service stopped');
+    log.info('cron service stopped');
   }
 
   /**
    * Reload configuration and reschedule jobs
    */
   async reloadConfig(config: SmartPruningConfig): Promise<void> {
-    console.log('[Cron] Reloading config...');
+    log.info('reloading cron config');
     
     // Stop existing jobs
     this.stop();
@@ -106,7 +109,7 @@ export class SmartPruningCronService implements CronService {
     });
     
     this.isStarted = true;
-    console.log('[Cron] Config reloaded');
+    log.info('cron config reloaded');
   }
 
   /**
@@ -125,7 +128,7 @@ export class SmartPruningCronService implements CronService {
       throw new Error(`Unknown job: ${name}`);
     }
 
-    console.log(`[Cron] Manual run: ${name}`);
+    log.info({ job: name }, 'manual job trigger');
     await job.task();
   }
 
@@ -145,7 +148,7 @@ export class SmartPruningCronService implements CronService {
 
     // Validate cron expression
     if (!cron.validate(expression)) {
-      console.error(`[Cron] Invalid expression for ${name}: ${expression}`);
+      log.error({ job: name, expression }, 'invalid cron expression');
       return;
     }
 
@@ -153,17 +156,17 @@ export class SmartPruningCronService implements CronService {
     const scheduledTask = cron.schedule(expression, async () => {
       const job = this.jobStatus.get(name);
       if (job?.isRunning) {
-        console.log(`[Cron] Skipping ${name} - already running`);
+        log.debug({ job: name }, 'skipping — already running');
         return;
       }
 
       try {
         this.jobStatus.set(name, { ...job!, isRunning: true, lastRun: new Date() });
-        console.log(`[Cron] Starting: ${name}`);
+        log.debug({ job: name }, 'starting job');
         await task();
-        console.log(`[Cron] Completed: ${name}`);
+        log.debug({ job: name }, 'job completed');
       } catch (err: any) {
-        console.error(`[Cron] Failed: ${name}`, err.message);
+        log.error({ job: name, err }, 'job failed');
       } finally {
         const updated = this.jobStatus.get(name)!;
         this.jobStatus.set(name, { ...updated, isRunning: false });
@@ -183,7 +186,7 @@ export class SmartPruningCronService implements CronService {
     this.jobs.set(name, scheduledTask);
     scheduledTask.start();
     
-    console.log(`[Cron] Scheduled: ${name} (${expression})`);
+    log.info({ job: name, expression }, 'scheduled cron job');
   }
 
   /**
@@ -191,7 +194,7 @@ export class SmartPruningCronService implements CronService {
    */
   private async runSmartPruning(config: SmartPruningConfig): Promise<void> {
     const startTime = Date.now();
-    console.log('[SmartPrune] Starting auto-trigger run...');
+    log.info('starting smart prune run');
     
     try {
       const result = await this.pruningExecutor.runSmartPruning(config);
@@ -203,13 +206,14 @@ export class SmartPruningCronService implements CronService {
       });
       
       const duration = Date.now() - startTime;
-      console.log(`[SmartPrune] Completed in ${duration}ms:`, {
+      log.info({
+        durationMs: duration,
         sessionsScanned: result.sessionsScanned,
         entriesExtracted: result.entriesExtracted,
         bytesSaved: result.bytesSaved,
-      });
+      }, 'smart prune completed');
     } catch (err: any) {
-      console.error('[SmartPrune] Failed:', err.message);
+      log.error({ err }, 'smart prune failed');
       throw err;
     }
   }
@@ -219,7 +223,7 @@ export class SmartPruningCronService implements CronService {
    */
   private async runRetentionCleanup(config: SmartPruningConfig): Promise<void> {
     const startTime = Date.now();
-    console.log('[Retention] Starting cleanup...');
+    log.info('starting retention cleanup');
     
     try {
       const result = await this.pruningExecutor.runRetentionCleanup(config.retention);
@@ -231,12 +235,13 @@ export class SmartPruningCronService implements CronService {
       });
       
       const duration = Date.now() - startTime;
-      console.log(`[Retention] Completed in ${duration}ms:`, {
+      log.info({
+        durationMs: duration,
         filesDeleted: result.filesDeleted,
         bytesReclaimed: result.bytesReclaimed,
-      });
+      }, 'retention cleanup completed');
     } catch (err: any) {
-      console.error('[Retention] Failed:', err.message);
+      log.error({ err }, 'retention cleanup failed');
       throw err;
     }
   }

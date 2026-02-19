@@ -1,6 +1,9 @@
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import type { Message, MessageBus, MessageHandler, MessageType } from './types.js';
+import { createLogger } from '../../shared/logging/logger.js';
+
+const log = createLogger('message-bus');
 
 interface SqliteMessageRow {
   id: string;
@@ -154,7 +157,7 @@ export class SqliteMessageBus implements MessageBus {
         try {
           await handler(message);
         } catch (error) {
-          console.error(`Message handler failed for ${message.type}:`, error);
+          log.error({ type: message.type, err: error }, 'message handler failed');
           await this.incrementRetry(message.id, String(error));
           continue; // Don't mark processed, will retry
         }

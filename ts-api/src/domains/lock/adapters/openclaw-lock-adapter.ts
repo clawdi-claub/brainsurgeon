@@ -3,6 +3,9 @@ import { open } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { LockHandle, LockService } from '../services/lock-service.js';
 import { LockError } from '../../../shared/errors/index.js';
+import { createLogger } from '../../../shared/logging/logger.js';
+
+const log = createLogger('lock-adapter');
 
 interface LockPayload {
   pid: number;
@@ -156,7 +159,7 @@ export class OpenClawLockAdapter implements LockService {
     const maxHoldMs = 5 * 60 * 1000;
     
     const timeout = setTimeout(() => {
-      console.warn(`Lock watchdog releasing: ${lockPath}`);
+      log.warn({ lockPath }, 'lock watchdog releasing stale lock');
       void rm(lockPath, { force: true });
     }, maxHoldMs);
 

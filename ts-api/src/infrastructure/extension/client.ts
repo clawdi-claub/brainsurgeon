@@ -36,7 +36,7 @@ export class OpenClawExtensionClient {
     // TODO: Implement actual OpenClaw event subscription
     // This requires Gateway API access or extension hooks
 
-    console.log('Extension client started (stub implementation)');
+    // Stub — will be removed (kb-115)
   }
 
   async stop(): Promise<void> {
@@ -50,7 +50,7 @@ export class OpenClawExtensionClient {
   async requestCompact(agentId: string, sessionId: string): Promise<void> {
     // Stub implementation
     // Would call: openclaw session compact --agent {agentId} --session {sessionId}
-    console.log(`Requested compact for ${agentId}/${sessionId}`);
+    // Stub — will be removed (kb-115)
   }
 
   /**

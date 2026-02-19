@@ -5,6 +5,9 @@ import { mapSessionListItem, mapSessionDetail } from './response-mapper.js';
 import { generateSessionSummary } from '../services/summary-service.js';
 import { sanitizeId } from '../../../shared/middleware/sanitize.js';
 import { auditLog } from '../../../shared/logging/audit.js';
+import { createLogger } from '../../../shared/logging/logger.js';
+
+const log = createLogger('session-routes');
 
 export function createSessionRoutes(
   sessionService: SessionService,
@@ -154,7 +157,7 @@ export function createSessionRoutes(
         }
       } catch (extError) {
         // Extension not available, continue with message bus approach
-        console.log('Extension not available for compaction, using message bus');
+        log.debug('extension not available for compaction, using message bus');
       }
 
       return c.json({

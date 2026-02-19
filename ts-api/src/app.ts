@@ -5,6 +5,10 @@ import { mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// Logging
+import { createLogger } from './shared/logging/logger.js';
+const log = createLogger('app');
+
 // Middleware
 import { createAuthMiddleware } from './shared/middleware/auth.js';
 import { createReadonlyMiddleware } from './shared/middleware/readonly.js';
@@ -208,7 +212,7 @@ apiApp.post('/events/entry-restored', async (c) => {
 
 // Error handler
 apiApp.onError((err, c) => {
-  console.error('Error:', err);
+  log.error({ err }, 'unhandled request error');
   return c.json({ error: 'Internal server error' }, 500);
 });
 
@@ -262,7 +266,7 @@ app.route('/', apiAppWithMiddleware);
 // Start message bus, cron service, and server
 async function main() {
   await messageBus.start();
-  console.log('Message bus started');
+  log.info('message bus started');
 
   // Start cron service for smart pruning
   await cronService.start();
@@ -272,10 +276,10 @@ async function main() {
     port: PORT,
   });
 
-  console.log(`BrainSurgeon API running on port ${PORT}`);
+  log.info({ port: PORT }, 'BrainSurgeon API running');
 }
 
-main().catch(console.error);
+main().catch((err) => log.fatal({ err }, 'startup failed'));
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {

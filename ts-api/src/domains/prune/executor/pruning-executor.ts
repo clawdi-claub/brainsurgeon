@@ -5,6 +5,9 @@
 
 import type { SmartPruningConfig } from '../../config/model/config.js';
 import type { PruningExecutor } from '../cron/cron-service.js';
+import { createLogger } from '../../../shared/logging/logger.js';
+
+const log = createLogger('pruning-executor');
 
 export class SmartPruningExecutor implements PruningExecutor {
   private agentsDir: string;
@@ -22,11 +25,11 @@ export class SmartPruningExecutor implements PruningExecutor {
     entriesExtracted: number;
     bytesSaved: number;
   }> {
-    console.log('[PruningExecutor] STUB: Would run smart pruning with config:', {
+    log.debug({
       enabled: config.enabled,
       trigger_types: config.trigger_types,
       age_threshold_hours: config.age_threshold_hours,
-    });
+    }, 'STUB: smart pruning not yet implemented');
 
     // TODO SP-05: Implement actual extraction logic
     // 1. Scan all sessions
@@ -49,7 +52,7 @@ export class SmartPruningExecutor implements PruningExecutor {
     filesDeleted: number;
     bytesReclaimed: number;
   }> {
-    console.log(`[PruningExecutor] STUB: Would cleanup files older than ${retention}`);
+    log.debug({ retention }, 'STUB: retention cleanup not yet implemented');
 
     // TODO SP-07: Implement actual retention cleanup
     // 1. Parse retention duration
