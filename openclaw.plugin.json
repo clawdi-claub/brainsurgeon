@@ -1,0 +1,52 @@
+{
+  "id": "brainsurgeon",
+  "name": "BrainSurgeon",
+  "description": "Web UI for surgical session management - browse, view, edit, prune, and delete OpenClaw sessions",
+  "version": "1.2.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "apiUrl": {
+        "type": "string",
+        "description": "Base URL for TypeScript API",
+        "default": "http://localhost:8000"
+      }
+    }
+  },
+  "permissions": {
+    "session": {
+      "read": true,
+      "write": true,
+      "delete": true,
+      "compact": true
+    },
+    "events": {
+      "subscribe": ["message_written", "session_created"]
+    },
+    "tools": {
+      "allow": ["restore_response"]
+    }
+  },
+  "entry_points": {
+    "web": "/brainsurgeon",
+    "activate": "activate",
+    "deactivate": "deactivate"
+  },
+  "dependencies": {
+    "python_packages": [
+      "fastapi",
+      "uvicorn",
+      "pydantic",
+      "slowapi"
+    ]
+  },
+  "security": {
+    "api_key_header": "X-API-Key",
+    "env_vars": {
+      "BRAINSURGEON_API_KEYS": "Comma-separated API keys",
+      "BRAINSURGEON_READONLY": "Set to 'true' for read-only mode",
+      "BRAINSURGEON_CORS_ORIGINS": "Allowed CORS origins"
+    }
+  }
+}
