@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, readFileSync, existsSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // Domain - Lock
 import { OpenClawLockAdapter } from './domains/lock/adapters/openclaw-lock-adapter.js';
@@ -82,6 +83,34 @@ apiApp.onError((err, c) => {
 
 // Main app mounts everything under /api
 const app = new Hono();
+
+// Static files - serve web frontend
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const webDir = join(__dirname, '..', '..', 'web');
+
+// Helper to read file safely
+function serveStatic(filename: string) {
+  const path = join(webDir, filename);
+  if (!existsSync(path)) return new Response('Not Found', { status: 404 });
+  return new Response(readFileSync(path), {
+    headers: { 'Content-Type': getContentType(filename) },
+  });
+}
+
+function getContentType(filename: string): string {
+  if (filename.endsWith('.html')) return 'text/html';
+  if (filename.endsWith('.js')) return 'application/javascript';
+  if (filename.endsWith('.css')) return 'text/css';
+  return 'text/plain';
+}
+
+// Serve static files from web directory
+app.get('/', c => serveStatic('index.html'));
+app.get('/index.html', c => serveStatic('index.html'));
+app.get('/app.js', c => serveStatic('app.js'));
+app.get('/styles.css', c => serveStatic('styles.css'));
+
+// Mount API
 app.route('/api', apiApp);
 // Also mount at root for direct access
 app.route('/', apiApp);
