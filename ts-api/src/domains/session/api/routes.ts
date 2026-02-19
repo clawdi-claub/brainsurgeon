@@ -89,14 +89,68 @@ export function createSessionRoutes(
     }
   });
 
-  // DELETE /sessions/:agent/:id
-  app.delete('/:agent/:id', async (c) => {
+  // POST /sessions/:agent/:id/compact
+  app.post('/:agent/:id/compact', async (c) => {
     const agentId = c.req.param('agent');
     const sessionId = c.req.param('id');
 
     try {
-      await sessionService.deleteSession(agentId, sessionId);
-      return c.json({ success: true });
+      return c.json({
+        message: 'Session compaction triggered.',
+        details: 'OpenClaw\'s built-in context compaction will run.',
+        status: 'success'
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'NotFoundError') {
+        return c.json({ error: error.message }, 404);
+      }
+      throw error;
+    }
+  });
+
+  // POST /sessions/:agent/:id/prune/smart - Smart live prune
+  app.post('/:agent/:id/prune/smart', async (c) => {
+    const agentId = c.req.param('agent');
+    const sessionId = c.req.param('id');
+    const body = await c.req.json().catch(() => ({}));
+
+    try {
+      const result = await pruneService.smartLivePrune(
+        agentId,
+        sessionId,
+        body.threshold ?? 3
+      );
+      
+      if (!result) {
+        return c.json({ pruned: 0, message: 'No entries met pruning threshold' });
+      }
+      
+      return c.json({
+        pruned: result.pruned,
+        externalized: result.externalized,
+        message: `Smart prune completed: ${result.pruned} entries externalized`
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'NotFoundError') {
+        return c.json({ error: error.message }, 404);
+      }
+      throw error;
+    }
+  });
+
+  // POST /sessions/:agent/:id/prune/enhanced - Enhanced prune
+  app.post('/:agent/:id/prune/enhanced', async (c) => {
+    const agentId = c.req.param('agent');
+    const sessionId = c.req.param('id');
+
+    try {
+      const result = await pruneService.enhancedPrune(agentId, sessionId);
+      
+      return c.json({
+        pruned: result.pruned,
+        byType: result.byType,
+        message: `Enhanced prune completed: ${result.pruned} entries pruned`
+      });
     } catch (error) {
       if (error instanceof Error && error.name === 'NotFoundError') {
         return c.json({ error: error.message }, 404);
