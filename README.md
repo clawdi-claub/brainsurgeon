@@ -30,6 +30,7 @@ Browse sessions like flipping through patient charts. Prune bloated tool outputs
 | ✏️ **Neuroplasticity** | Edit individual messages—rewrite history if you must |
 | 📊 **Vital Signs** | Token usage analytics, model breakdowns, duration tracking |
 | 🔄 **Resurrection** | Restore sessions from trash (we don't judge) |
+| 🧩 **Smart Collapse** | Auto-collapse long texts (>500 chars) and tool results for clean viewing |
 
 ![Session Browser](./screenshots/02-session-opened.png)
 
