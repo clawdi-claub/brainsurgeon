@@ -47,14 +47,16 @@ export interface SessionDetailResponse {
   updated: string | null;
   models: string[];
   tokens: number | null;
-  // Extra metadata from sessions.json
+  // Extra metadata from sessions.json (Python API parity)
   channel: string | null;
   contextTokens: number | null;
   inputTokens: number | null;
   outputTokens: number | null;
   parentId: string | null;
-  children: RawEntry[];
+  children: Array<{ sessionId: string; label: string }>;
   compactionCount: number | null;
+  systemPromptReport: string | null;
+  resolvedSkills: string[];
 }
 
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
@@ -139,7 +141,8 @@ export function mapSessionDetail(
   agentId: string,
   entries: RawEntry[],
   metadata: { createdAt: number; updatedAt: number; title?: string },
-  rawMeta?: Session['rawMeta']
+  rawMeta?: Session['rawMeta'],
+  children?: Array<{ sessionId: string; label: string }>,
 ): SessionDetailResponse {
   const stale = isStale(metadata.updatedAt);
   const stats = analyzeEntries(entries);
@@ -166,7 +169,9 @@ export function mapSessionDetail(
     inputTokens: rawMeta?.inputTokens ?? null,
     outputTokens: rawMeta?.outputTokens ?? null,
     parentId: rawMeta?.parentSessionId ?? null,
-    children: [],
+    children: children ?? [],
     compactionCount: rawMeta?.compactionCount ?? null,
+    systemPromptReport: rawMeta?.systemPromptReport ?? null,
+    resolvedSkills: rawMeta?.resolvedSkills ?? [],
   };
 }

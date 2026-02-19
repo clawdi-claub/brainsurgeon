@@ -12,6 +12,7 @@ interface PluginApi {
     apiUrl?: string;
     enableAutoPrune?: boolean;
     autoPruneThreshold?: number;
+    keepRestoreRemoteCalls?: boolean; // Debug toggle
   };
   registerTool: (tool: ToolDefinition) => void;
   registerCommand: (command: CommandDefinition) => void;
@@ -143,6 +144,161 @@ async function forwardToApi(endpoint: string, data: any): Promise<void> {
 }
 
 /**
+ * Parse restore_remote tool arguments
+ * Format: --session {id} --entry {id} [--keys key1,key2,...]
+ */
+function parseRestoreRemoteArgs(args: string[]): { session?: string; entry?: string; keys?: string[] } {
+  const result: { session?: string; entry?: string; keys?: string[] } = {};
+  
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--session' && i + 1 < args.length) {
+      result.session = args[++i];
+    } else if (arg === '--entry' && i + 1 < args.length) {
+      result.entry = args[++i];
+    } else if (arg === '--keys' && i + 1 < args.length) {
+      result.keys = args[++i].split(',').map(k => k.trim()).filter(Boolean);
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * Restore extracted content for a session entry
+ * Returns the restored entry data and whether the tool call should be consumed
+ */
+async function restoreRemoteContent(
+  agentId: string,
+  sessionId: string,
+  entryId: string,
+  keysToRestore?: string[]
+): Promise<{ success: boolean; restoredKeys?: string[]; error?: string }> {
+  if (!api) {
+    return { success: false, error: 'Plugin not activated' };
+  }
+  
+  try {
+    // Find extracted file
+    const agentsDir = '/home/openclaw/.openclaw/agents';
+    const extractedPath = path.join(agentsDir, agentId, 'sessions', 'extracted', sessionId, `${entryId}.jsonl`);
+    
+    // Check if extracted file exists
+    try {
+      await fs.access(extractedPath);
+    } catch {
+      return { success: false, error: `No extracted content found for entry: ${entryId}` };
+    }
+    
+    // Read extracted content
+    const extractedContent = await fs.readFile(extractedPath, 'utf-8');
+    const extractedData = JSON.parse(extractedContent);
+    
+    // Determine which keys to restore
+    const keys = keysToRestore || Object.keys(extractedData).filter(k => !k.startsWith('__'));
+    
+    // Read current session
+    const sessionFile = path.join(agentsDir, agentId, 'sessions', `${sessionId}.jsonl`);
+    const lockFile = `${sessionFile}.lock`;
+    
+    await acquireLock(lockFile);
+    
+    try {
+      const sessionContent = await fs.readFile(sessionFile, 'utf-8');
+      const lines = sessionContent.split('\n').filter(l => l.trim());
+      const entries = lines.map(line => JSON.parse(line));
+      
+      // Find the entry to restore
+      let entryIndex = -1;
+      let targetEntry: any = null;
+      
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        if (entry.__id === entryId || entry.id === entryId) {
+          entryIndex = i;
+          targetEntry = entry;
+          break;
+        }
+      }
+      
+      if (entryIndex === -1 || !targetEntry) {
+        return { success: false, error: `Entry ${entryId} not found in session` };
+      }
+      
+      // Restore the specified keys
+      const restoredKeys: string[] = [];
+      
+      function restoreInObject(obj: any, path: string[] = []): void {
+        for (const key of Object.keys(obj)) {
+          const currentPath = [...path, key];
+          const fullKey = currentPath.join('.');
+          
+          if (obj[key] === '[[extracted]]') {
+            // This key was extracted - restore it
+            const extractedValue = getNestedValue(extractedData, currentPath);
+            if (extractedValue !== undefined) {
+              setNestedValue(obj, currentPath, extractedValue);
+              restoredKeys.push(fullKey);
+            }
+          } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+            // Recurse into nested objects
+            restoreInObject(obj[key], currentPath);
+          }
+        }
+      }
+      
+      // Helper to get nested value from extracted data
+      function getNestedValue(data: any, path: string[]): any {
+        let current = data;
+        for (const key of path) {
+          if (current === null || typeof current !== 'object') return undefined;
+          current = current[key];
+        }
+        return current;
+      }
+      
+      // Helper to set nested value
+      function setNestedValue(obj: any, path: string[], value: any): void {
+        let current = obj;
+        for (let i = 0; i < path.length - 1; i++) {
+          current = current[path[i]];
+        }
+        current[path[path.length - 1]] = value;
+      }
+      
+      // Perform restoration
+      restoreInObject(targetEntry);
+      
+      // Mark entry as restored
+      targetEntry.__restored_at = new Date().toISOString();
+      targetEntry.__restored_keys = restoredKeys;
+      
+      // Write updated session
+      const updatedContent = entries.map(e => JSON.stringify(e)).join('\n') + '\n';
+      await fs.writeFile(sessionFile, updatedContent, 'utf-8');
+      
+      api.log.info(`Restored ${restoredKeys.length} keys for entry ${entryId} in session ${sessionId}`);
+      
+      // Notify TypeScript API
+      await forwardToApi('/api/events/content-restored', {
+        agentId,
+        sessionId,
+        entryId,
+        keysRestored: restoredKeys,
+        timestamp: new Date().toISOString(),
+      });
+      
+      return { success: true, restoredKeys };
+    } finally {
+      await releaseLock(lockFile);
+    }
+  } catch (error: any) {
+    api.log.error('restore_remote error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
  * Plugin activation - called by OpenClaw when plugin loads
  */
 export async function activate(pluginApi: PluginApi): Promise<void> {
@@ -151,129 +307,64 @@ export async function activate(pluginApi: PluginApi): Promise<void> {
   api.log.info('BrainSurgeon plugin activating...');
   api.log.info(`Config: ${JSON.stringify(api.config)}`);
 
-  // Register restore_response tool
+  // Register restore_remote tool
   api.registerTool({
-    name: 'restore_response',
-    description: 'Rehydrate pruned tool response content from external storage back into the session',
+    name: 'restore_remote',
+    description: 'Restore extracted content from external storage into the session. Usage: restore_remote --session {id} --entry {id} [--keys key1,key2,...]',
     parameters: Type.Object({
-      toolcallid: Type.String({ description: 'ID of the tool call whose response should be restored' }),
+      session: Type.String({ description: 'Session ID containing the extracted entry' }),
+      entry: Type.String({ description: 'Entry ID (the __id field) of the entry with extracted content' }),
+      keys: Type.Optional(Type.String({ description: 'Comma-separated list of specific keys to restore (default: all extracted keys)' })),
     }),
-    async execute(_id: string, params: { toolcallid: string }) {
-      const { toolcallid } = params;
-      
+    async execute(_id: string, params: { session: string; entry: string; keys?: string }) {
       if (!api) {
         throw new Error('Plugin not activated');
       }
       
-      try {
-        // Find the external file
-        // External storage path: ~/.openclaw/agents/{agent}/sessions/external/{toolcallid}.json
-        const agentsDir = '/home/openclaw/.openclaw/agents';
-        const externalFiles: string[] = [];
-        
-        // Search all agent directories for the external file
-        const agents = await fs.readdir(agentsDir).catch(() => []);
-        for (const agent of agents) {
-          const externalPath = path.join(agentsDir, agent, 'sessions', 'external', `${toolcallid}.json`);
-          try {
-            await fs.access(externalPath);
-            externalFiles.push(externalPath);
-          } catch {
-            // File doesn't exist - continue searching
-          }
-        }
-        
-        if (externalFiles.length === 0) {
-          throw new Error(`No external content found for tool call: ${toolcallid}`);
-        }
-        
-        // Use first match (should be unique)
-        const externalPath = externalFiles[0];
-        const externalContent = await fs.readFile(externalPath, 'utf-8');
-        const externalEntry = JSON.parse(externalContent);
-        
-        // Extract agent and session from the path
-        const pathParts = externalPath.split('/');
-        const agentIdx = pathParts.indexOf('agents');
-        const agentId = pathParts[agentIdx + 1];
-        const sessionId = pathParts[agentIdx + 3]; // sessions/{sessionId}/external/...
-        
-        const sessionFile = path.join(agentsDir, agentId, 'sessions', `${sessionId}.jsonl`);
-        const lockFile = `${sessionFile}.lock`;
-        
-        // Acquire lock
-        await acquireLock(lockFile);
-        
+      // Parse keys if provided
+      const keysToRestore = params.keys ? params.keys.split(',').map(k => k.trim()).filter(Boolean) : undefined;
+      
+      // Determine agent from session context (this would come from OpenClaw context)
+      // For now, we need to search across agents to find the session
+      const agentsDir = '/home/openclaw/.openclaw/agents';
+      const agents = await fs.readdir(agentsDir).catch(() => []);
+      
+      let result: { success: boolean; restoredKeys?: string[]; error?: string } | null = null;
+      let foundAgent: string | null = null;
+      
+      for (const agent of agents) {
+        const sessionFile = path.join(agentsDir, agent, 'sessions', `${params.session}.jsonl`);
         try {
-          // Read current session
-          const sessionContent = await fs.readFile(sessionFile, 'utf-8');
-          const lines = sessionContent.split('\n').filter(l => l.trim());
-          const entries = lines.map(line => JSON.parse(line));
-          
-          // Find and replace the pruned stub with the full entry
-          let found = false;
-          const updatedEntries = entries.map(entry => {
-            // Check if this is a restore_response entry or a pruned stub for this toolcall
-            const isTarget = 
-              (entry.type === 'restore_response' && entry.parameters?.toolcallid === toolcallid) ||
-              (entry.tool_call_id === toolcallid) ||
-              (entry.message?.tool_call_id === toolcallid) ||
-              (entry._external_id === toolcallid);
-            
-            if (isTarget && !found) {
-              found = true;
-              api.log.info(`Restoring tool response for ${toolcallid} in session ${sessionId}`);
-              // Return the full external entry instead of the stub
-              return {
-                ...externalEntry,
-                _restored_at: new Date().toISOString(),
-                _restored_from: externalPath,
-              };
-            }
-            return entry;
-          });
-          
-          if (!found) {
-            api.log.warn(`No matching entry found for ${toolcallid} - appending as new entry`);
-            updatedEntries.push({
-              ...externalEntry,
-              _restored_at: new Date().toISOString(),
-              _restored_from: externalPath,
-              _appended: true,
-            });
-          }
-          
-          // Write updated session
-          const updatedContent = updatedEntries.map(e => JSON.stringify(e)).join('\n') + '\n';
-          await fs.writeFile(sessionFile, updatedContent, 'utf-8');
-          
-          // Delete external file after successful restore
-          await fs.unlink(externalPath);
-          api.log.info(`External file removed: ${externalPath}`);
-          
-          // Notify TypeScript API of the change
-          await forwardToApi('/api/events/entry-restored', {
-            agentId,
-            sessionId,
-            toolcallid,
-            timestamp: new Date().toISOString(),
-          });
-          
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `Tool response restored successfully for tool call: ${toolcallid}\nSession: ${sessionId}\nAgent: ${agentId}`,
-              },
-            ],
-          };
-        } finally {
-          await releaseLock(lockFile);
+          await fs.access(sessionFile);
+          foundAgent = agent;
+          result = await restoreRemoteContent(agent, params.session, params.entry, keysToRestore);
+          break;
+        } catch {
+          // Session not in this agent, continue
         }
-      } catch (error: any) {
-        api.log.error('restore_response tool error:', error);
-        throw new Error(`Failed to restore response: ${error.message}`);
       }
+      
+      if (!foundAgent) {
+        throw new Error(`Session ${params.session} not found in any agent`);
+      }
+      
+      if (!result || !result.success) {
+        throw new Error(result?.error || 'Restore failed');
+      }
+      
+      // Return result to agent
+      // Note: By default, OpenClaw will consume this tool call (remove from session)
+      // unless keepRestoreRemoteCalls config is true
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Successfully restored ${result.restoredKeys?.length || 0} keys for entry ${params.entry}\nKeys: ${result.restoredKeys?.join(', ') || 'none'}`,
+          },
+        ],
+        // Signal to OpenClaw whether to keep or consume this tool call
+        _consumeToolCall: !api.config?.keepRestoreRemoteCalls,
+      };
     },
   });
 
@@ -289,7 +380,6 @@ export async function activate(pluginApi: PluginApi): Promise<void> {
       const threshold = api?.config?.autoPruneThreshold || 3;
       
       // Check if pruning conditions met
-      // This would typically call the TypeScript API to evaluate and trigger pruning
       try {
         const apiUrl = api?.config?.apiUrl || 'http://localhost:8000';
         const response = await fetch(`${apiUrl}/api/sessions/${event.agentId}/${event.sessionId}/prune/smart`, {

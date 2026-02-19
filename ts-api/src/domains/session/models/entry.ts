@@ -62,6 +62,8 @@ export interface SessionListItem {
     outputTokens?: number;
     parentSessionId?: string;
     compactionCount?: number;
+    systemPromptReport?: string;
+    resolvedSkills?: string[];
   };
 }
 

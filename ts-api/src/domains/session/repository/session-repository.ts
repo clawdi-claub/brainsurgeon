@@ -29,6 +29,10 @@ interface OpenClawSessionMeta {
   origin?: {
     label?: string;
   };
+  systemPromptReport?: unknown;
+  skillsSnapshot?: {
+    resolvedSkills?: Array<{ name?: string } | string>;
+  };
 }
 
 export interface SessionRepository {
@@ -37,6 +41,7 @@ export interface SessionRepository {
   exists(agentId: string, sessionId: string): Promise<boolean>;
   list(agentId?: string): Promise<SessionListItem[]>;
   delete(agentId: string, sessionId: string): Promise<void>;
+  findChildren(agentId: string, sessionId: string): Promise<Array<{ sessionId: string; label: string }>>;
 }
 
 /**
@@ -118,6 +123,20 @@ export class FileSystemSessionRepository implements SessionRepository {
       const entry = Object.values(data).find(m => m.sessionId === sessionId);
       if (!entry) return undefined;
 
+      // Resolve skills: handle both {name: string}[] and string[]
+      const skills = entry.skillsSnapshot?.resolvedSkills ?? [];
+      const resolvedSkills: string[] = skills.map((s) =>
+        typeof s === 'string' ? s : (s.name ?? 'unknown')
+      );
+
+      // systemPromptReport: stringify if object
+      const systemPromptReport =
+        entry.systemPromptReport == null
+          ? undefined
+          : typeof entry.systemPromptReport === 'string'
+          ? entry.systemPromptReport
+          : JSON.stringify(entry.systemPromptReport, null, 2);
+
       return {
         channel: entry.lastChannel || entry.deliveryContext?.channel,
         tokens: entry.totalTokens,
@@ -126,6 +145,8 @@ export class FileSystemSessionRepository implements SessionRepository {
         outputTokens: entry.outputTokens,
         parentSessionId: entry.parentSessionId,
         compactionCount: entry.compactionCount,
+        systemPromptReport,
+        resolvedSkills,
       };
     } catch {
       return undefined;
@@ -324,6 +345,26 @@ export class FileSystemSessionRepository implements SessionRepository {
       this.cache.delete(sessionFile);
     } finally {
       await lock.release();
+    }
+  }
+
+  async findChildren(agentId: string, sessionId: string): Promise<Array<{ sessionId: string; label: string }>> {
+    const sessionsJson = this.resolveSessionsJson(agentId);
+    try {
+      const content = await readFile(sessionsJson, 'utf8');
+      const data = JSON.parse(content) as Record<string, OpenClawSessionMeta>;
+      const children: Array<{ sessionId: string; label: string }> = [];
+      for (const [key, meta] of Object.entries(data)) {
+        if (meta.parentSessionId === sessionId && meta.sessionId) {
+          children.push({
+            sessionId: meta.sessionId,
+            label: meta.origin?.label || key,
+          });
+        }
+      }
+      return children;
+    } catch {
+      return [];
     }
   }
 

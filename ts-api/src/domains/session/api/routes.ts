@@ -2,6 +2,9 @@ import { Hono } from 'hono';
 import type { SessionService } from '../services/session-service.js';
 import type { PruneService } from '../services/prune-service.js';
 import { mapSessionListItem, mapSessionDetail } from './response-mapper.js';
+import { generateSessionSummary } from '../services/summary-service.js';
+import { sanitizeId } from '../../../shared/middleware/sanitize.js';
+import { auditLog } from '../../../shared/logging/audit.js';
 
 export function createSessionRoutes(
   sessionService: SessionService,
@@ -33,8 +36,8 @@ export function createSessionRoutes(
 
   // GET /sessions/:agent/:id
   app.get('/:agent/:id', async (c) => {
-    const agentId = c.req.param('agent');
-    const sessionId = c.req.param('id');
+    const agentId = sanitizeId(c.req.param('agent'), 'agent');
+    const sessionId = sanitizeId(c.req.param('id'), 'session_id');
 
     try {
       const session = await sessionService.getSession(agentId, sessionId);
@@ -43,7 +46,8 @@ export function createSessionRoutes(
         session.agentId,
         session.entries,
         session.metadata,
-        session.rawMeta
+        session.rawMeta,
+        session.children,
       ));
     } catch (error) {
       if (error instanceof Error && error.name === 'NotFoundError') {
@@ -53,14 +57,20 @@ export function createSessionRoutes(
     }
   });
 
-  // GET /sessions/:agent/:id/summary
+  // GET /sessions/:agent/:id/summary — Python API-compatible rich summary
   app.get('/:agent/:id/summary', async (c) => {
-    const agentId = c.req.param('agent');
-    const sessionId = c.req.param('id');
+    const agentId = sanitizeId(c.req.param('agent'), 'agent');
+    const sessionId = sanitizeId(c.req.param('id'), 'session_id');
 
     try {
-      const summary = await sessionService.getSummary(agentId, sessionId);
-      return c.json(summary);
+      const session = await sessionService.getSession(agentId, sessionId);
+      const summary = generateSessionSummary(session.entries);
+      return c.json({
+        session_id: sessionId,
+        agent: agentId,
+        summary,
+        generated_at: new Date().toISOString(),
+      });
     } catch (error) {
       if (error instanceof Error && error.name === 'NotFoundError') {
         return c.json({ error: error.message }, 404);
@@ -71,16 +81,27 @@ export function createSessionRoutes(
 
   // POST /sessions/:agent/:id/prune
   app.post('/:agent/:id/prune', async (c) => {
-    const agentId = c.req.param('agent');
-    const sessionId = c.req.param('id');
+    const agentId = sanitizeId(c.req.param('agent'), 'agent');
+    const sessionId = sanitizeId(c.req.param('id'), 'session_id');
     const body = await c.req.json().catch(() => ({}));
+
+    const keepRecent = body.keepRecent ?? body.keep_recent;
+    auditLog('prune', agentId, sessionId, c.req.header('X-API-Key'), { keep_recent: keepRecent });
 
     try {
       const result = await pruneService.execute(agentId, sessionId, {
-        keepRecent: body.keepRecent ?? body.keep_recent,
+        keepRecent,
         threshold: body.threshold,
       });
-      return c.json(result);
+      // Python API-compatible response fields
+      return c.json({
+        pruned: result.pruned_count > 0,
+        entries_pruned: result.pruned_count,
+        original_size: result.original_size,
+        new_size: result.new_size,
+        saved_bytes: result.original_size - result.new_size,
+        mode: keepRecent === -1 ? 'light' : 'full',
+      });
     } catch (error) {
       if (error instanceof Error && error.name === 'NotFoundError') {
         return c.json({ error: error.message }, 404);
@@ -202,16 +223,50 @@ export function createSessionRoutes(
     }
   });
 
+  // DELETE /sessions/:agent/:id — moves to trash, also deletes child sessions
+  app.delete('/:agent/:id', async (c) => {
+    const agentId = sanitizeId(c.req.param('agent'), 'agent');
+    const sessionId = sanitizeId(c.req.param('id'), 'session_id');
+
+    auditLog('delete', agentId, sessionId, c.req.header('X-API-Key'));
+
+    try {
+      // Find children before deleting (Python API parity: delete child sessions too)
+      const children = await sessionService['sessionRepo'].findChildren(agentId, sessionId);
+
+      await sessionService.deleteSession(agentId, sessionId);
+
+      // Also delete child sessions
+      for (const child of children) {
+        try {
+          await sessionService.deleteSession(agentId, child.sessionId);
+          auditLog('delete_child', agentId, child.sessionId, c.req.header('X-API-Key'), { parent: sessionId });
+        } catch {
+          // Don't fail if child doesn't exist
+        }
+      }
+
+      return c.json({ deleted: true, id: sessionId, moved_to_trash: true, children_deleted: children.length });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'NotFoundError') {
+        return c.json({ error: error.message }, 404);
+      }
+      throw error;
+    }
+  });
+
   // PUT /sessions/:agent/:id/entries/:index (Python API parity)
   app.put('/:agent/:id/entries/:index', async (c) => {
-    const agentId = c.req.param('agent');
-    const sessionId = c.req.param('id');
+    const agentId = sanitizeId(c.req.param('agent'), 'agent');
+    const sessionId = sanitizeId(c.req.param('id'), 'session_id');
     const index = parseInt(c.req.param('index'), 10);
     const body = await c.req.json().catch(() => ({}));
 
     if (isNaN(index) || index < 0) {
       return c.json({ error: 'Invalid entry index' }, 400);
     }
+
+    auditLog('edit_entry', agentId, sessionId, c.req.header('X-API-Key'), { index });
 
     try {
       await sessionService.editEntryByIndex(agentId, sessionId, index, body.entry);

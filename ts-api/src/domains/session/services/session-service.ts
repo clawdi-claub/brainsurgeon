@@ -18,8 +18,10 @@ export class SessionService {
     private messageBus?: MessageBus
   ) {}
 
-  async getSession(agentId: string, sessionId: string): Promise<Session> {
-    return this.sessionRepo.load(agentId, sessionId);
+  async getSession(agentId: string, sessionId: string): Promise<Session & { children: Array<{ sessionId: string; label: string }> }> {
+    const session = await this.sessionRepo.load(agentId, sessionId);
+    const children = await this.sessionRepo.findChildren(agentId, sessionId);
+    return { ...session, children };
   }
 
   async listSessions(agentId?: string): Promise<SessionListItem[]> {

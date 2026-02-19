@@ -1,4 +1,4 @@
-import { readdir, readFile, rename, access, mkdir, rm, stat } from 'node:fs/promises';
+import { readdir, readFile, writeFile, rename, access, mkdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { NotFoundError } from '../../../shared/errors/index.js';
 
@@ -99,6 +99,29 @@ export class FileSystemTrashRepository implements TrashRepository {
 
     await mkdir(targetDir, { recursive: true });
     await rename(jsonlPath, targetPath);
+
+    // Re-add to sessions.json if missing (Python API parity)
+    const sessionsJsonPath = join(targetDir, 'sessions.json');
+    try {
+      let data: Record<string, unknown> = {};
+      try {
+        const content = await readFile(sessionsJsonPath, 'utf8');
+        data = JSON.parse(content);
+      } catch { /* file may not exist */ }
+
+      const alreadyExists = Object.values(data).some(
+        (v) => (v as Record<string, unknown>)?.sessionId === sessionId
+      );
+
+      if (!alreadyExists) {
+        data[sessionId] = {
+          sessionId,
+          updatedAt: Date.now(),
+          origin: { label: sessionId.slice(0, 8) + ' (restored)' },
+        };
+        await writeFile(sessionsJsonPath, JSON.stringify(data, null, 2), 'utf8');
+      }
+    } catch { /* don't fail restore if sessions.json update fails */ }
 
     // Clean up meta file
     const metaPath = jsonlPath.replace('.jsonl', '.meta.json');
