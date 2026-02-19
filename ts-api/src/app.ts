@@ -283,11 +283,17 @@ main().catch((err) => log.fatal({ err }, 'startup failed'));
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
+  log.info('SIGTERM received, shutting down gracefully');
+  await cronService.stop();
   await messageBus.stop();
+  log.info('shutdown complete');
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
+  log.info('SIGINT received, shutting down gracefully');
+  await cronService.stop();
   await messageBus.stop();
+  log.info('shutdown complete');
   process.exit(0);
 });
