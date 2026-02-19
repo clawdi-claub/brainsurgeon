@@ -17,6 +17,12 @@ interface OpenClawSessionMeta {
   updatedAt?: number;
   chatType?: string;
   lastChannel?: string;
+  totalTokens?: number;
+  contextTokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  compactionCount?: number;
+  parentSessionId?: string;
   deliveryContext?: {
     channel?: string;
   };
@@ -57,41 +63,72 @@ export class FileSystemSessionRepository implements SessionRepository {
 
   async load(agentId: string, sessionId: string): Promise<Session> {
     const sessionFile = this.resolvePath(agentId, sessionId);
-    
-    // Try cache first
+
+    // Check existence first
+    if (!(await this.fileExists(sessionFile))) {
+      throw new NotFoundError('Session', `${agentId}/${sessionId}`);
+    }
+
+    // Try cache
     const cached = this.getFromCache(sessionFile);
+    const rawMeta = await this.lookupRawMeta(agentId, sessionId);
+
     if (cached) {
       return {
         id: sessionId,
         agentId,
         entries: cached.entries,
         metadata: this.buildMetadata(cached.entries),
+        rawMeta,
       };
-    }
-
-    // Check existence
-    if (!(await this.fileExists(sessionFile))) {
-      throw new NotFoundError('Session', `${agentId}/${sessionId}`);
     }
 
     // Acquire lock for reading
     const lock = await this.lockService.acquire(sessionFile);
-    
+
     try {
       const content = await readFile(sessionFile, 'utf8');
       const entries = this.parseJsonl(content);
-      
-      // Update cache
+
       this.updateCache(sessionFile, entries);
-      
+
       return {
         id: sessionId,
         agentId,
         entries,
         metadata: this.buildMetadata(entries),
+        rawMeta,
       };
     } finally {
       await lock.release();
+    }
+  }
+
+  /** Look up raw metadata from sessions.json for a given sessionId */
+  private async lookupRawMeta(
+    agentId: string,
+    sessionId: string
+  ): Promise<Session['rawMeta'] | undefined> {
+    const sessionsJson = this.resolveSessionsJson(agentId);
+
+    try {
+      const content = await readFile(sessionsJson, 'utf8');
+      const data = JSON.parse(content) as Record<string, OpenClawSessionMeta>;
+
+      const entry = Object.values(data).find(m => m.sessionId === sessionId);
+      if (!entry) return undefined;
+
+      return {
+        channel: entry.lastChannel || entry.deliveryContext?.channel,
+        tokens: entry.totalTokens,
+        contextTokens: entry.contextTokens,
+        inputTokens: entry.inputTokens,
+        outputTokens: entry.outputTokens,
+        parentSessionId: entry.parentSessionId,
+        compactionCount: entry.compactionCount,
+      };
+    } catch {
+      return undefined;
     }
   }
 
@@ -164,13 +201,25 @@ export class FileSystemSessionRepository implements SessionRepository {
           id: meta.sessionId,
           agentId,
           title: meta.origin?.label || key,
-          createdAt: 0, // Will be set from stats
+          createdAt: 0,
           updatedAt: meta.updatedAt || 0,
           entryCount: stats.entryCount,
+          sizeBytes: stats.sizeBytes,
           status: 'active',
           currentModel: stats.models[0],
           modelsUsed: stats.models,
           toolCallCount: stats.toolCallCount,
+          messageCount: stats.messages,
+          toolOutputCount: stats.toolOutputs,
+          rawMeta: {
+            channel: meta.lastChannel || meta.deliveryContext?.channel,
+            tokens: meta.totalTokens,
+            contextTokens: meta.contextTokens,
+            inputTokens: meta.inputTokens,
+            outputTokens: meta.outputTokens,
+            parentSessionId: meta.parentSessionId,
+            compactionCount: meta.compactionCount,
+          },
         });
       }
 
@@ -187,11 +236,12 @@ export class FileSystemSessionRepository implements SessionRepository {
     messages: number;
     toolOutputs: number;
     models: string[];
+    sizeBytes: number;
   }> {
     const sessionFile = this.resolvePath(agentId, sessionId);
 
     try {
-      const stats = statSync(sessionFile);
+      const fileStats = statSync(sessionFile);
       const content = await readFile(sessionFile, 'utf8');
       const entries = this.parseJsonl(content);
 
@@ -236,6 +286,7 @@ export class FileSystemSessionRepository implements SessionRepository {
         messages,
         toolOutputs,
         models: Array.from(models),
+        sizeBytes: fileStats.size,
       };
     } catch {
       return {
@@ -244,6 +295,7 @@ export class FileSystemSessionRepository implements SessionRepository {
         messages: 0,
         toolOutputs: 0,
         models: [],
+        sizeBytes: 0,
       };
     }
   }

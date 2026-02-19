@@ -22,11 +22,12 @@ export function createSessionRoutes(
 
     const mapped = sessions.map(mapSessionListItem);
     const agents = [...new Set(sessions.map(s => s.agentId))];
+    const total_size = sessions.reduce((sum, s) => sum + (s.sizeBytes || 0), 0);
 
     return c.json({
       sessions: mapped,
       agents,
-      total_size: 0,
+      total_size,
     });
   });
 
@@ -41,7 +42,8 @@ export function createSessionRoutes(
         session.id,
         session.agentId,
         session.entries,
-        session.metadata
+        session.metadata,
+        session.rawMeta
       ));
     } catch (error) {
       if (error instanceof Error && error.name === 'NotFoundError') {

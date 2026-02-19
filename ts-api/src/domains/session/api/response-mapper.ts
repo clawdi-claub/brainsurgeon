@@ -1,4 +1,4 @@
-import type { SessionListItem } from '../models/entry.js';
+import type { Session, SessionListItem } from '../models/entry.js';
 
 /**
  * Maps internal types to Python API-compatible response format
@@ -47,6 +47,14 @@ export interface SessionDetailResponse {
   updated: string | null;
   models: string[];
   tokens: number | null;
+  // Extra metadata from sessions.json
+  channel: string | null;
+  contextTokens: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  parentId: string | null;
+  children: RawEntry[];
+  compactionCount: number | null;
 }
 
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
@@ -72,10 +80,10 @@ export function mapSessionListItem(item: SessionListItem): SessionInfoResponse {
     agent: item.agentId,
     label: item.title || item.id.slice(0, 8),
     path: '',
-    size: 0,
-    messages: item.entryCount,
+    size: item.sizeBytes || 0,
+    messages: item.messageCount ?? item.entryCount,
     tool_calls: item.toolCallCount || 0,
-    tool_outputs: 0,
+    tool_outputs: item.toolOutputCount || 0,
     created: toIsoString(item.createdAt),
     updated: toIsoString(item.updatedAt),
     duration_minutes: computeDuration(item.createdAt, item.updatedAt),
@@ -130,7 +138,8 @@ export function mapSessionDetail(
   id: string,
   agentId: string,
   entries: RawEntry[],
-  metadata: { createdAt: number; updatedAt: number; title?: string }
+  metadata: { createdAt: number; updatedAt: number; title?: string },
+  rawMeta?: Session['rawMeta']
 ): SessionDetailResponse {
   const stale = isStale(metadata.updatedAt);
   const stats = analyzeEntries(entries);
@@ -151,6 +160,13 @@ export function mapSessionDetail(
     created: toIsoString(metadata.createdAt),
     updated: toIsoString(metadata.updatedAt),
     models: stats.models,
-    tokens: null,
+    tokens: rawMeta?.tokens ?? null,
+    channel: rawMeta?.channel ?? null,
+    contextTokens: rawMeta?.contextTokens ?? null,
+    inputTokens: rawMeta?.inputTokens ?? null,
+    outputTokens: rawMeta?.outputTokens ?? null,
+    parentId: rawMeta?.parentSessionId ?? null,
+    children: [],
+    compactionCount: rawMeta?.compactionCount ?? null,
   };
 }

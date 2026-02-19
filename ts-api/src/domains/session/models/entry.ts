@@ -23,6 +23,8 @@ export interface Session {
   agentId: string;
   entries: JsonEntry[];
   metadata: SessionMetadata;
+  /** Raw sessions.json metadata for detail view */
+  rawMeta?: SessionListItem['rawMeta'];
 }
 
 export interface SessionMetadata {
@@ -35,7 +37,7 @@ export interface SessionMetadata {
   isCompacted?: boolean;
 }
 
-// Session list item (from sessions.json)
+// Session list item (from sessions.json + JSONL analysis)
 export interface SessionListItem {
   id: string;
   agentId: string;
@@ -44,10 +46,23 @@ export interface SessionListItem {
   updatedAt: number;
   entryCount: number;
   tokenCount?: number;
+  sizeBytes?: number;
   status: 'active' | 'stale' | 'archived';
   currentModel?: string;
   modelsUsed?: string[];
   toolCallCount?: number;
+  messageCount?: number;
+  toolOutputCount?: number;
+  // Raw sessions.json metadata for detail view
+  rawMeta?: {
+    channel?: string;
+    tokens?: number;
+    contextTokens?: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    parentSessionId?: string;
+    compactionCount?: number;
+  };
 }
 
 // Legacy type guards (always return false for raw records)
