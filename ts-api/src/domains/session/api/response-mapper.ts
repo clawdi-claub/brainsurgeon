@@ -1,9 +1,16 @@
-import type { Session, SessionListItem, SessionEntry } from '../models/entry.js';
+import type { SessionListItem } from '../models/entry.js';
 
 /**
  * Maps internal types to Python API-compatible response format
  * for frontend backward compatibility.
+ *
+ * OpenClaw JSONL entries use a nested format:
+ *   { type: "message", message: { role, content, model } }
+ * The frontend expects raw entries passed through as-is.
  */
+
+// Generic record type for raw OpenClaw JSONL entries
+type RawEntry = Record<string, unknown>;
 
 export interface SessionInfoResponse {
   id: string;
@@ -30,9 +37,10 @@ export interface SessionDetailResponse {
   path: string;
   size: number;
   raw_content: string;
-  entries: Record<string, unknown>[];
+  entries: RawEntry[];
   messages: number;
   tool_calls: number;
+  tool_outputs: number;
   duration_minutes: number | null;
   is_stale: boolean;
   created: string | null;
@@ -43,12 +51,12 @@ export interface SessionDetailResponse {
 
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
-function toIsoString(ts: number): string | null {
-  return ts ? new Date(ts).toISOString() : null;
-}
-
 function isStale(updatedAt: number): boolean {
   return Date.now() - updatedAt > STALE_THRESHOLD_MS;
+}
+
+function toIsoString(ts: number): string | null {
+  return ts ? new Date(ts).toISOString() : null;
 }
 
 function computeDuration(createdAt: number, updatedAt: number): number | null {
@@ -78,62 +86,71 @@ export function mapSessionListItem(item: SessionListItem): SessionInfoResponse {
   };
 }
 
-export function mapSessionDetail(session: Session): SessionDetailResponse {
-  const { entries, metadata } = session;
-  const stale = isStale(metadata.updatedAt);
+/** Analyze raw OpenClaw JSONL entries for stats */
+function analyzeEntries(entries: RawEntry[]) {
+  let messages = 0;
+  let toolCalls = 0;
+  let toolOutputs = 0;
+  const models = new Set<string>();
 
-  const messageCount = entries.filter(e => e.type === 'message').length;
-  const toolCallCount = countToolCalls(entries);
-  const models = extractModels(entries);
-  const tokens = sumTokens(entries);
+  for (const entry of entries) {
+    const entryType = entry.type as string;
+
+    if (entryType === 'message') {
+      const msg = entry.message as Record<string, unknown> | undefined;
+      if (!msg) continue;
+
+      const role = msg.role as string;
+      if (role === 'user' || role === 'assistant') messages++;
+      if (role === 'toolResult') toolOutputs++;
+
+      const model = msg.model as string | undefined;
+      if (model) models.add(model);
+
+      // Count toolCall items in content array
+      const content = msg.content;
+      if (Array.isArray(content)) {
+        for (const item of content) {
+          if (item && typeof item === 'object' && (item as Record<string, unknown>).type === 'toolCall') {
+            toolCalls++;
+          }
+        }
+      }
+    } else if (entryType === 'tool_call') {
+      toolCalls++;
+    } else if (entryType === 'tool_result' || entryType === 'tool') {
+      toolOutputs++;
+    }
+  }
+
+  return { messages, toolCalls, toolOutputs, models: Array.from(models) };
+}
+
+export function mapSessionDetail(
+  id: string,
+  agentId: string,
+  entries: RawEntry[],
+  metadata: { createdAt: number; updatedAt: number; title?: string }
+): SessionDetailResponse {
+  const stale = isStale(metadata.updatedAt);
+  const stats = analyzeEntries(entries);
 
   return {
-    id: session.id,
-    agent: session.agentId,
-    label: metadata.title || session.id.slice(0, 8),
+    id,
+    agent: agentId,
+    label: metadata.title || id.slice(0, 8),
     path: '',
     size: 0,
     raw_content: '',
-    entries: entries as unknown as Record<string, unknown>[],
-    messages: messageCount,
-    tool_calls: toolCallCount,
+    entries,
+    messages: stats.messages,
+    tool_calls: stats.toolCalls,
+    tool_outputs: stats.toolOutputs,
     duration_minutes: computeDuration(metadata.createdAt, metadata.updatedAt),
     is_stale: stale,
     created: toIsoString(metadata.createdAt),
     updated: toIsoString(metadata.updatedAt),
-    models,
-    tokens: tokens || null,
+    models: stats.models,
+    tokens: null,
   };
-}
-
-function countToolCalls(entries: SessionEntry[]): number {
-  let count = 0;
-  for (const entry of entries) {
-    if (entry.type === 'tool_call') {
-      count++;
-    } else if (entry.type === 'message' && 'content' in entry) {
-      count += entry.content.filter(c => c.type === 'tool_use').length;
-    }
-  }
-  return count;
-}
-
-function extractModels(entries: SessionEntry[]): string[] {
-  const models = new Set<string>();
-  for (const entry of entries) {
-    if (entry.type === 'message' && 'model' in entry && entry.model) {
-      models.add(entry.model);
-    }
-  }
-  return Array.from(models);
-}
-
-function sumTokens(entries: SessionEntry[]): number {
-  let total = 0;
-  for (const entry of entries) {
-    if (entry.type === 'message' && 'usage' in entry && entry.usage) {
-      total += entry.usage.total_tokens || (entry.usage.input_tokens + entry.usage.output_tokens);
-    }
-  }
-  return total;
 }

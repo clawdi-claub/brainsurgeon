@@ -1,4 +1,4 @@
-import type { Session, SessionEntry } from '../models/entry.js';
+import type { Session, JsonEntry } from '../models/entry.js';
 import type { SessionRepository } from '../repository/session-repository.js';
 import type { LockService } from '../../lock/services/lock-service.js';
 import type { ExternalStorage } from '../../../infrastructure/external/storage.js';
@@ -40,15 +40,16 @@ export class PruneService {
       }
 
       // Externalize tool results
-      const keptEntries: SessionEntry[] = [];
+      const keptEntries: JsonEntry[] = [];
       const externalizedIds: string[] = [];
       
       for (const entry of session.entries) {
-        if (toExternalize.includes(entry.id) && entry.type === 'tool_result') {
+        const entryId = entry.id as string;
+        if (toExternalize.includes(entryId) && entry.type === 'tool_result') {
           // Store full content externally
-          await this.externalStorage.store(agentId, sessionId, entry.id, entry);
+          await this.externalStorage.store(agentId, sessionId, entryId, entry);
           
-          externalizedIds.push(entry.id);
+          externalizedIds.push(entryId);
           keptEntries.push(this.createStubEntry(entry));
         } else {
           keptEntries.push(entry);
@@ -82,26 +83,29 @@ export class PruneService {
     // Find all tool results
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
+      const entryType = entry.type as string;
       
       // Only process tool_result entries
-      if (entry.type !== 'tool_result') continue;
+      if (entryType !== 'tool_result') continue;
       
       // Check if threshold messages have passed since this entry
-      const messagesSince = entries.slice(i + 1).filter(e => 
-        e.type === 'message' && (e.role === 'user' || e.role === 'assistant')
-      ).length;
+      const messagesSince = entries.slice(i + 1).filter(e => {
+        const t = e.type as string;
+        const role = (e.message as Record<string, unknown>)?.role as string | undefined;
+        return t === 'message' && (role === 'user' || role === 'assistant');
+      }).length;
       
       if (messagesSince >= threshold) {
-        toPrune.push(entry.id);
+        toPrune.push(entry.id as string);
       }
     }
     
     return toPrune;
   }
 
-  private createStubEntry(entry: SessionEntry): SessionEntry {
+  private createStubEntry(entry: JsonEntry): JsonEntry {
     // Replace externalized entry with stub
-    if (entry.type === 'tool_result') {
+    if ((entry.type as string) === 'tool_result') {
       return {
         ...entry,
         content: [{ type: 'text', text: '[Content externalized - use restore_response tool]' }],

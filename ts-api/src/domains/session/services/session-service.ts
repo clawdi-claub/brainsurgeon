@@ -1,4 +1,4 @@
-import type { Session, SessionEntry, SessionListItem, SessionMetadata } from '../models/entry.js';
+import type { Session, JsonEntry, SessionListItem, SessionMetadata } from '../models/entry.js';
 import type { SessionRepository } from '../repository/session-repository.js';
 import type { LockService } from '../../lock/services/lock-service.js';
 import { NotFoundError } from '../../../shared/errors/index.js';
@@ -65,7 +65,7 @@ export class SessionService {
     agentId: string,
     sessionId: string,
     entryId: string,
-    updates: Partial<SessionEntry>
+    updates: Partial<JsonEntry>
   ): Promise<void> {
     const session = await this.sessionRepo.load(agentId, sessionId);
 
@@ -92,11 +92,11 @@ export class SessionService {
       throw new Error(`Invalid entry index: ${index}`);
     }
 
-    session.entries[index] = replacement as unknown as SessionEntry;
+    session.entries[index] = replacement;
     await this.sessionRepo.save(agentId, sessionId, session);
   }
 
-  private generateSummary(entries: SessionEntry[]): string {
+  private generateSummary(entries: JsonEntry[]): string {
     // Basic summary - first user message + last assistant message
     const firstUser = entries.find(e => e.type === 'message' && e.role === 'user');
     const lastAssistant = entries.reverse().find(e => e.type === 'message' && e.role === 'assistant');
@@ -116,7 +116,7 @@ export class SessionService {
     return summary || 'Session summary not available';
   }
 
-  private extractText(entry: SessionEntry): string {
+  private extractText(entry: JsonEntry): string {
     if (entry.type !== 'message' || !Array.isArray(entry.content)) {
       return '';
     }

@@ -1,12 +1,12 @@
 import { readFile, writeFile, mkdir, rename, access, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { readFileSync, statSync } from 'node:fs';
-import type { Session, SessionEntry, SessionListItem, SessionMetadata } from '../models/entry.js';
+import type { Session, SessionListItem, SessionMetadata, JsonEntry } from '../models/entry.js';
 import type { LockService } from '../../lock/services/lock-service.js';
 import { NotFoundError } from '../../../shared/errors/index.js';
 
 interface CacheEntry {
-  entries: SessionEntry[];
+  entries: JsonEntry[];
   mtimeMs: number;
   size: number;
 }
@@ -157,23 +157,94 @@ export class FileSystemSessionRepository implements SessionRepository {
       for (const [key, meta] of Object.entries(data)) {
         if (!meta.sessionId) continue;
 
+        // Analyze the JSONL file for accurate stats
+        const stats = await this.analyzeJsonl(agentId, meta.sessionId);
+
         items.push({
           id: meta.sessionId,
           agentId,
           title: meta.origin?.label || key,
-          createdAt: 0,
+          createdAt: 0, // Will be set from stats
           updatedAt: meta.updatedAt || 0,
-          entryCount: 0,
+          entryCount: stats.entryCount,
           status: 'active',
-          currentModel: undefined,
-          modelsUsed: [],
-          toolCallCount: 0,
+          currentModel: stats.models[0],
+          modelsUsed: stats.models,
+          toolCallCount: stats.toolCallCount,
         });
       }
 
       return items.sort((a, b) => b.updatedAt - a.updatedAt);
     } catch {
       return [];
+    }
+  }
+
+  /** Analyze a JSONL file for stats (matching Python API behavior) */
+  private async analyzeJsonl(agentId: string, sessionId: string): Promise<{
+    entryCount: number;
+    toolCallCount: number;
+    messages: number;
+    toolOutputs: number;
+    models: string[];
+  }> {
+    const sessionFile = this.resolvePath(agentId, sessionId);
+
+    try {
+      const stats = statSync(sessionFile);
+      const content = await readFile(sessionFile, 'utf8');
+      const entries = this.parseJsonl(content);
+
+      let messages = 0;
+      let toolCalls = 0;
+      let toolOutputs = 0;
+      const models = new Set<string>();
+
+      for (const entry of entries) {
+        const entryType = entry.type as string;
+
+        if (entryType === 'message') {
+          const msg = entry.message as Record<string, unknown> | undefined;
+          if (!msg) continue;
+
+          const role = msg.role as string;
+          if (role === 'user' || role === 'assistant') messages++;
+          if (role === 'toolResult') toolOutputs++;
+
+          const model = msg.model as string | undefined;
+          if (model) models.add(model);
+
+          // Count toolCall items in content array
+          const content = msg.content;
+          if (Array.isArray(content)) {
+            for (const item of content) {
+              if (item && typeof item === 'object' && (item as Record<string, unknown>).type === 'toolCall') {
+                toolCalls++;
+              }
+            }
+          }
+        } else if (entryType === 'tool_call') {
+          toolCalls++;
+        } else if (entryType === 'tool_result' || entryType === 'tool') {
+          toolOutputs++;
+        }
+      }
+
+      return {
+        entryCount: entries.length,
+        toolCallCount: toolCalls,
+        messages,
+        toolOutputs,
+        models: Array.from(models),
+      };
+    } catch {
+      return {
+        entryCount: 0,
+        toolCallCount: 0,
+        messages: 0,
+        toolOutputs: 0,
+        models: [],
+      };
     }
   }
 
@@ -204,13 +275,13 @@ export class FileSystemSessionRepository implements SessionRepository {
     }
   }
 
-  private parseJsonl(content: string): SessionEntry[] {
+  private parseJsonl(content: string): JsonEntry[] {
     const lines = content.split('\n').filter(l => l.trim());
-    const entries: SessionEntry[] = [];
+    const entries: JsonEntry[] = [];
     
     for (const line of lines) {
       try {
-        const entry = JSON.parse(line) as SessionEntry;
+        const entry = JSON.parse(line) as JsonEntry;
         entries.push(entry);
       } catch {
         // Skip malformed lines
@@ -220,12 +291,14 @@ export class FileSystemSessionRepository implements SessionRepository {
     return entries;
   }
 
-  private serializeJsonl(entries: SessionEntry[]): string {
+  private serializeJsonl(entries: JsonEntry[]): string {
     return entries.map(e => JSON.stringify(e)).join('\n') + '\n';
   }
 
-  private buildMetadata(entries: SessionEntry[]): SessionMetadata {
-    const timestamps = entries.map(e => e.timestamp).filter(Boolean);
+  private buildMetadata(entries: JsonEntry[]): SessionMetadata {
+    const timestamps = entries
+      .map(e => e.timestamp as number | undefined)
+      .filter((t): t is number => typeof t === 'number' && t > 0);
     
     return {
       createdAt: timestamps.length > 0 ? Math.min(...timestamps) : Date.now(),
@@ -251,7 +324,7 @@ export class FileSystemSessionRepository implements SessionRepository {
     }
   }
 
-  private updateCache(sessionFile: string, entries: SessionEntry[]): void {
+  private updateCache(sessionFile: string, entries: JsonEntry[]): void {
     try {
       const stats = statSync(sessionFile);
       this.cache.set(sessionFile, {

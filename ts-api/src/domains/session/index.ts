@@ -6,18 +6,13 @@ export { createSessionRoutes } from './api/routes.js';
 // Models
 export type {
   Session,
-  SessionEntry,
+  JsonEntry,
   SessionListItem,
   SessionMetadata,
   TokenUsage,
-  ContentBlock,
-  MessageEntry,
-  ToolCallEntry,
-  ToolResultEntry,
-  CompactionEntry,
 } from './models/entry.js';
 
-// Guards
+// Guards (work on JsonEntry)
 export {
   isMessageEntry,
   isToolCallEntry,

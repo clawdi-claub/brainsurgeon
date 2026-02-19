@@ -37,7 +37,12 @@ export function createSessionRoutes(
 
     try {
       const session = await sessionService.getSession(agentId, sessionId);
-      return c.json(mapSessionDetail(session));
+      return c.json(mapSessionDetail(
+        session.id,
+        session.agentId,
+        session.entries,
+        session.metadata
+      ));
     } catch (error) {
       if (error instanceof Error && error.name === 'NotFoundError') {
         return c.json({ error: error.message }, 404);
