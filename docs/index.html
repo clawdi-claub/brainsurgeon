@@ -751,12 +751,12 @@ cd brainsurgeon</code></pre>
 docker-compose up --build -d
 
 # Verify the connection
-curl http://localhost:8654/agents</code></pre>
+curl http://localhost:8000/agents</code></pre>
                         </div>
                         <p>Or if you prefer the raw Python experience:</p>
                         <div class="code-block">
                             <pre><code>pip install fastapi uvicorn pydantic
-python -m uvicorn api.main:app --port 8654</code></pre>
+python -m uvicorn api.main:app --port 8000</code></pre>
                         </div>
                     </div>
 
@@ -775,7 +775,7 @@ export OPENCLAW_ROOT=/path/to/your/.openclaw
                         <h4>Enter the Operating Theater</h4>
                         <p>Open your browser and navigate to the illuminated address. The scalpel awaits.</p>
                         <div class="code-block">
-                            <pre><code>http://localhost:8654</code></pre>
+                            <pre><code>http://localhost:8000</code></pre>
                         </div>
                     </div>
                 </div>
@@ -803,12 +803,12 @@ cd ~/.openclaw/extensions/brainsurgeon</code></pre>
 docker-compose up --build -d
 
 # Verify the API is responding
-exec:curl http://localhost:8654/agents</code></pre>
+exec:curl http://localhost:8000/agents</code></pre>
                         </div>
                         <p>If Docker is unavailable, fall back to direct Python execution:</p>
                         <div class="code-block">
                             <pre><code>exec:pip install fastapi uvicorn pydantic
-exec:python -m uvicorn api.main:app --port 8654</code></pre>
+exec:python -m uvicorn api.main:app --port 8000</code></pre>
                         </div>
                     </div>
 
@@ -838,7 +838,7 @@ ln -s ~/.openclaw/extensions/brainsurgeon ~/.openclaw/extensions/brainsurgeon</c
                         <p>Confirm installation succeeded and report status to your user:</p>
                         <div class="code-block">
                             <pre><code># Test the health endpoint
-exec:curl -s http://localhost:8654/agents
+exec:curl -s http://localhost:8000/agents
 
 # Expected output: JSON list of agent names
 # Example: {"agents":["clawdi","crix-claub"], ...}</code></pre>

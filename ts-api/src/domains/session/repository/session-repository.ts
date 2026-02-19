@@ -253,11 +253,75 @@ export class FileSystemSessionRepository implements SessionRepository {
     sessionId: string,
     session: Session
   ): Promise<void> {
-    // Implementation stub - update mutable metadata store
-    // This is safe to write without full locking (OpenClaw only reads metadata from here)
+    const sessionsJsonPath = this.resolveSessionsJson(agentId);
+    
+    // Ensure directory exists
+    await mkdir(dirname(sessionsJsonPath), { recursive: true });
+    
+    // Read existing sessions.json or create new
+    let sessions: SessionListItem[] = [];
+    try {
+      const content = await readFile(sessionsJsonPath, 'utf8');
+      const data = JSON.parse(content) as { sessions: SessionListItem[] };
+      sessions = data.sessions || [];
+    } catch {
+      // File doesn't exist or is malformed, start fresh
+    }
+    
+    // Find existing entry or create new
+    const existingIndex = sessions.findIndex(s => s.id === sessionId);
+    
+    // Extract model info and token count from entries
+    const models = new Set<string>();
+    let totalTokens = 0;
+    let toolCallCount = 0;
+    
+    for (const entry of session.entries) {
+      if (entry.type === 'message') {
+        if (entry.model) models.add(entry.model);
+        if (entry.usage?.total_tokens) totalTokens += entry.usage.total_tokens;
+        // Count tool calls in content
+        toolCallCount += entry.content.filter(c => c.type === 'tool_use').length;
+      }
+    }
+    
+    const listItem: SessionListItem = {
+      id: sessionId,
+      agentId,
+      createdAt: session.metadata.createdAt,
+      updatedAt: Date.now(),
+      entryCount: session.metadata.entryCount,
+      tokenCount: totalTokens || session.metadata.tokenCount,
+      status: 'active',
+      currentModel: models.size > 0 ? Array.from(models)[0] : undefined,
+      modelsUsed: Array.from(models),
+      toolCallCount,
+    };
+    
+    if (existingIndex >= 0) {
+      sessions[existingIndex] = listItem;
+    } else {
+      sessions.push(listItem);
+    }
+    
+    // Sort by updatedAt descending (most recent first)
+    sessions.sort((a, b) => b.updatedAt - a.updatedAt);
+    
+    // Write back
+    await writeFile(sessionsJsonPath, JSON.stringify({ sessions }, null, 2), 'utf8');
   }
 
   private async removeFromSessionsJson(agentId: string, sessionId: string): Promise<void> {
-    // Remove from sessions.json when deleted
+    const sessionsJsonPath = this.resolveSessionsJson(agentId);
+    
+    try {
+      const content = await readFile(sessionsJsonPath, 'utf8');
+      const data = JSON.parse(content) as { sessions: SessionListItem[] };
+      const sessions = (data.sessions || []).filter(s => s.id !== sessionId);
+      
+      await writeFile(sessionsJsonPath, JSON.stringify({ sessions }, null, 2), 'utf8');
+    } catch {
+      // File doesn't exist or is malformed, nothing to remove
+    }
   }
 }
