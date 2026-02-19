@@ -23,23 +23,22 @@ import { ExternalStorage } from './infrastructure/external/storage.js';
 
 // Config
 const PORT = Number(process.env.PORT) || 8000;
-const SESSIONS_DIR = process.env.SESSIONS_DIR || '/home/openclaw/.openclaw/sessions';
+const AGENTS_DIR = process.env.AGENTS_DIR || '/home/openclaw/.openclaw/agents';
 const DATA_DIR = process.env.DATA_DIR || '/home/openclaw/.openclaw/brainsurgeon';
 
 // Ensure directories exist
 mkdirSync(DATA_DIR, { recursive: true });
-mkdirSync(SESSIONS_DIR, { recursive: true });
 
 // Initialize infrastructure
 const messageBus = new SqliteMessageBus(join(DATA_DIR, 'bus.db'));
 
 // Initialize domain services
 const lockService = new OpenClawLockAdapter();
-const sessionRepository = new FileSystemSessionRepository(SESSIONS_DIR, lockService);
+const sessionRepository = new FileSystemSessionRepository(AGENTS_DIR, lockService);
 const sessionService = new SessionService(sessionRepository, lockService);
-const externalStorage = new ExternalStorage({ sessionsDir: SESSIONS_DIR });
+const externalStorage = new ExternalStorage({ sessionsDir: AGENTS_DIR });
 const pruneService = new PruneService(sessionRepository, lockService, externalStorage);
-const trashRepository = new FileSystemTrashRepository(SESSIONS_DIR);
+const trashRepository = new FileSystemTrashRepository(AGENTS_DIR);
 const trashService = new TrashService(trashRepository);
 
 // Create Hono app with /api base path for backward compatibility

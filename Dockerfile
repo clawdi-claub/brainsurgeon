@@ -33,7 +33,7 @@ RUN mkdir -p /data
 EXPOSE 8000
 
 ENV PORT=8000
-ENV SESSIONS_DIR=/data/sessions
+ENV AGENTS_DIR=/data/openclaw/agents
 ENV DATA_DIR=/data
 
 CMD ["node", "dist/app.js"]

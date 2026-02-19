@@ -8,6 +8,6 @@ services:
       - ${OPENCLAW_ROOT:-~/.openclaw}:/data/openclaw:rw
     environment:
       - PORT=8000
-      - SESSIONS_DIR=/data/openclaw/sessions
+      - AGENTS_DIR=/data/openclaw/agents
       - DATA_DIR=/data/brainsurgeon
     restart: unless-stopped

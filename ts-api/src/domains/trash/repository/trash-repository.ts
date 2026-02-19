@@ -1,13 +1,23 @@
-import { readdir, readFile, rename, access, mkdir, rm } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { readdir, readFile, rename, access, mkdir, rm, stat } from 'node:fs/promises';
+import { join } from 'node:path';
 import { NotFoundError } from '../../../shared/errors/index.js';
 
 export interface TrashedSession {
   id: string;
   agentId: string;
   deletedAt: number;
+  expiresAt: string;
   entryCount: number;
   originalPath: string;
+}
+
+interface TrashMeta {
+  original_agent: string;
+  original_session_id: string;
+  original_path: string;
+  trashed_at: string;
+  expires_at: string;
+  parent_session_id?: string;
 }
 
 export interface TrashRepository {
@@ -17,53 +27,63 @@ export interface TrashRepository {
   cleanupExpired(retentionDays?: number): Promise<number>;
 }
 
+/**
+ * Reads from the Python API-compatible trash directory.
+ * Structure: {openclawRoot}/trash/{agent}_{sessionId}_{timestamp}.jsonl
+ * With companion .meta.json files.
+ */
 export class FileSystemTrashRepository implements TrashRepository {
-  constructor(
-    private sessionsDir: string
-  ) {}
+  private trashDir: string;
+  private agentsDir: string;
 
-  private getTrashDir(): string {
-    return join(this.sessionsDir, '.trash');
+  constructor(agentsDir: string) {
+    // Trash dir is at the OpenClaw root level, sibling of agents/
+    // agentsDir = /path/.openclaw/agents → trashDir = /path/.openclaw/trash
+    this.agentsDir = agentsDir;
+    this.trashDir = join(agentsDir, '..', 'trash');
   }
 
   async list(): Promise<TrashedSession[]> {
-    const trashDir = this.getTrashDir();
-    
     try {
-      await access(trashDir);
+      await access(this.trashDir);
     } catch {
       return [];
     }
 
+    const files = await readdir(this.trashDir);
     const trashed: TrashedSession[] = [];
-    const agents = await readdir(trashDir);
 
-    for (const agentId of agents) {
-      const agentDir = join(trashDir, agentId);
-      const files = await readdir(agentDir).catch(() => []);
+    for (const file of files) {
+      if (!file.endsWith('.meta.json')) continue;
 
-      for (const file of files) {
-        if (!file.endsWith('.jsonl')) continue;
-        
-        const sessionId = file.replace('.jsonl', '');
-        const filePath = join(agentDir, file);
-        
+      const metaPath = join(this.trashDir, file);
+      try {
+        const content = await readFile(metaPath, 'utf8');
+        const meta = JSON.parse(content) as TrashMeta;
+        const stats = await stat(metaPath);
+
+        // Find the matching jsonl file
+        const jsonlFile = file.replace('.meta.json', '.jsonl');
+        const jsonlPath = join(this.trashDir, jsonlFile);
+
+        let entryCount = 0;
         try {
-          const content = await readFile(filePath, 'utf8');
-          const entries = content.split('\n').filter(l => l.trim());
-          
-          const stats = await import('node:fs/promises').then(m => m.stat(filePath));
-          
-          trashed.push({
-            id: sessionId,
-            agentId,
-            deletedAt: stats.mtimeMs,
-            entryCount: entries.length,
-            originalPath: filePath,
-          });
+          const jsonlContent = await readFile(jsonlPath, 'utf8');
+          entryCount = jsonlContent.split('\n').filter(l => l.trim()).length;
         } catch {
-          // Skip corrupt files
+          // jsonl file might be missing
         }
+
+        trashed.push({
+          id: meta.original_session_id,
+          agentId: meta.original_agent,
+          deletedAt: stats.mtimeMs,
+          expiresAt: meta.expires_at,
+          entryCount,
+          originalPath: meta.original_path,
+        });
+      } catch {
+        // Skip corrupt meta files
       }
     }
 
@@ -71,66 +91,88 @@ export class FileSystemTrashRepository implements TrashRepository {
   }
 
   async restore(agentId: string, sessionId: string): Promise<void> {
-    const trashPath = join(this.getTrashDir(), agentId, `${sessionId}.jsonl`);
-    const targetDir = join(this.sessionsDir, agentId);
+    const { jsonlPath } = await this.findTrashFiles(agentId, sessionId);
+
+    // Restore to original location
+    const targetDir = join(this.agentsDir, agentId, 'sessions');
     const targetPath = join(targetDir, `${sessionId}.jsonl`);
 
-    try {
-      await access(trashPath);
-    } catch {
-      throw new NotFoundError('Trashed session', `${agentId}/${sessionId}`);
-    }
-
     await mkdir(targetDir, { recursive: true });
-    await rename(trashPath, targetPath);
+    await rename(jsonlPath, targetPath);
+
+    // Clean up meta file
+    const metaPath = jsonlPath.replace('.jsonl', '.meta.json');
+    try { await rm(metaPath); } catch { /* ignore */ }
   }
 
   async deletePermanently(agentId: string, sessionId: string): Promise<void> {
-    const trashPath = join(this.getTrashDir(), agentId, `${sessionId}.jsonl`);
+    const { jsonlPath } = await this.findTrashFiles(agentId, sessionId);
 
-    try {
-      await access(trashPath);
-    } catch {
-      throw new NotFoundError('Trashed session', `${agentId}/${sessionId}`);
-    }
+    await rm(jsonlPath);
 
-    await rm(trashPath);
+    // Clean up meta file
+    const metaPath = jsonlPath.replace('.jsonl', '.meta.json');
+    try { await rm(metaPath); } catch { /* ignore */ }
   }
 
-  async cleanupExpired(retentionDays = 14): Promise<number> {
-    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
-    const trashDir = this.getTrashDir();
+  async cleanupExpired(): Promise<number> {
+    const now = Date.now();
     let cleaned = 0;
 
     try {
-      await access(trashDir);
+      await access(this.trashDir);
     } catch {
       return 0;
     }
 
-    const agents = await readdir(trashDir);
+    const files = await readdir(this.trashDir);
 
-    for (const agentId of agents) {
-      const agentDir = join(trashDir, agentId);
-      const files = await readdir(agentDir).catch(() => []);
+    for (const file of files) {
+      if (!file.endsWith('.meta.json')) continue;
 
-      for (const file of files) {
-        if (!file.endsWith('.jsonl')) continue;
-        const filePath = join(agentDir, file);
+      const metaPath = join(this.trashDir, file);
+      try {
+        const content = await readFile(metaPath, 'utf8');
+        const meta = JSON.parse(content) as TrashMeta;
+        const expiresAt = new Date(meta.expires_at).getTime();
 
-        try {
-          const { stat } = await import('node:fs/promises');
-          const stats = await stat(filePath);
-          if (stats.mtimeMs < cutoff) {
-            await rm(filePath);
-            cleaned++;
-          }
-        } catch {
-          // Skip files we can't stat
+        if (expiresAt < now) {
+          const jsonlFile = file.replace('.meta.json', '.jsonl');
+          const jsonlPath = join(this.trashDir, jsonlFile);
+          try { await rm(jsonlPath); } catch { /* ignore */ }
+          await rm(metaPath);
+          cleaned++;
         }
+      } catch {
+        // Skip corrupt files
       }
     }
 
     return cleaned;
+  }
+
+  /**
+   * Find trash files matching agent + sessionId.
+   * Files are named: {agent}_{sessionId}_{timestamp}.jsonl
+   */
+  private async findTrashFiles(
+    agentId: string,
+    sessionId: string
+  ): Promise<{ jsonlPath: string }> {
+    try {
+      await access(this.trashDir);
+    } catch {
+      throw new NotFoundError('Trashed session', `${agentId}/${sessionId}`);
+    }
+
+    const prefix = `${agentId}_${sessionId}_`;
+    const files = await readdir(this.trashDir);
+    const match = files.find(f => f.startsWith(prefix) && f.endsWith('.jsonl'));
+
+    if (!match) {
+      throw new NotFoundError('Trashed session', `${agentId}/${sessionId}`);
+    }
+
+    return { jsonlPath: join(this.trashDir, match) };
   }
 }

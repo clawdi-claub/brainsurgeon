@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, rename, access } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename, access, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { readFileSync, statSync } from 'node:fs';
 import type { Session, SessionEntry, SessionListItem, SessionMetadata } from '../models/entry.js';
@@ -11,6 +11,20 @@ interface CacheEntry {
   size: number;
 }
 
+/** OpenClaw sessions.json entry (map values) */
+interface OpenClawSessionMeta {
+  sessionId: string;
+  updatedAt?: number;
+  chatType?: string;
+  lastChannel?: string;
+  deliveryContext?: {
+    channel?: string;
+  };
+  origin?: {
+    label?: string;
+  };
+}
+
 export interface SessionRepository {
   load(agentId: string, sessionId: string): Promise<Session>;
   save(agentId: string, sessionId: string, session: Session): Promise<void>;
@@ -19,22 +33,26 @@ export interface SessionRepository {
   delete(agentId: string, sessionId: string): Promise<void>;
 }
 
+/**
+ * Reads OpenClaw session files from the agents directory.
+ * Structure: {agentsDir}/{agent}/sessions/{sessionId}.jsonl
+ */
 export class FileSystemSessionRepository implements SessionRepository {
-  private sessionsDir: string;
+  private agentsDir: string;
   private lockService: LockService;
   private cache = new Map<string, CacheEntry>();
 
-  constructor(sessionsDir: string, lockService: LockService) {
-    this.sessionsDir = sessionsDir;
+  constructor(agentsDir: string, lockService: LockService) {
+    this.agentsDir = agentsDir;
     this.lockService = lockService;
   }
 
   private resolvePath(agentId: string, sessionId: string): string {
-    return join(this.sessionsDir, agentId, `${sessionId}.jsonl`);
+    return join(this.agentsDir, agentId, 'sessions', `${sessionId}.jsonl`);
   }
 
   private resolveSessionsJson(agentId: string): string {
-    return join(this.sessionsDir, agentId, 'sessions.json');
+    return join(this.agentsDir, agentId, 'sessions', 'sessions.json');
   }
 
   async load(agentId: string, sessionId: string): Promise<Session> {
@@ -124,15 +142,36 @@ export class FileSystemSessionRepository implements SessionRepository {
 
   private async listForAgent(agentId: string): Promise<SessionListItem[]> {
     const sessionsJson = this.resolveSessionsJson(agentId);
-    
+
     if (!(await this.fileExists(sessionsJson))) {
       return [];
     }
 
     try {
       const content = await readFile(sessionsJson, 'utf8');
-      const data = JSON.parse(content) as { sessions: SessionListItem[] };
-      return data.sessions || [];
+      const data = JSON.parse(content) as Record<string, OpenClawSessionMeta>;
+
+      // OpenClaw sessions.json is a map of sessionKey -> metadata
+      const items: SessionListItem[] = [];
+
+      for (const [key, meta] of Object.entries(data)) {
+        if (!meta.sessionId) continue;
+
+        items.push({
+          id: meta.sessionId,
+          agentId,
+          title: meta.origin?.label || key,
+          createdAt: 0,
+          updatedAt: meta.updatedAt || 0,
+          entryCount: 0,
+          status: 'active',
+          currentModel: undefined,
+          modelsUsed: [],
+          toolCallCount: 0,
+        });
+      }
+
+      return items.sort((a, b) => b.updatedAt - a.updatedAt);
     } catch {
       return [];
     }
@@ -140,24 +179,24 @@ export class FileSystemSessionRepository implements SessionRepository {
 
   async delete(agentId: string, sessionId: string): Promise<void> {
     const sessionFile = this.resolvePath(agentId, sessionId);
-    
+
     if (!(await this.fileExists(sessionFile))) {
       throw new NotFoundError('Session', `${agentId}/${sessionId}`);
     }
 
     const lock = await this.lockService.acquire(sessionFile);
-    
+
     try {
-      // Move to trash instead of delete
-      const trashDir = join(this.sessionsDir, '.trash', agentId);
+      // Move to trash: {agentsDir}/.trash/{agent}/{sessionId}.jsonl
+      const trashDir = join(this.agentsDir, '.trash', agentId);
       await mkdir(trashDir, { recursive: true });
       const trashPath = join(trashDir, `${sessionId}.jsonl`);
-      
+
       await rename(sessionFile, trashPath);
-      
-      // Update sessions.json
+
+      // Remove from sessions.json
       await this.removeFromSessionsJson(agentId, sessionId);
-      
+
       // Invalidate cache
       this.cache.delete(sessionFile);
     } finally {
@@ -235,93 +274,55 @@ export class FileSystemSessionRepository implements SessionRepository {
   }
 
   private async getAgents(): Promise<string[]> {
-    // Read agents.json or scan directories
-    const agentsJson = join(this.sessionsDir, 'agents.json');
-    
     try {
-      const content = await readFile(agentsJson, 'utf8');
-      const data = JSON.parse(content) as { agents: string[] };
-      return data.agents || [];
+      const entries = await readdir(this.agentsDir, { withFileTypes: true });
+      return entries
+        .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+        .map(e => e.name);
     } catch {
-      // Fallback: scan directories
       return [];
     }
   }
 
+  /**
+   * Updates sessions.json metadata after save.
+   * Note: sessions.json is OpenClaw's map format { key: { sessionId, ... } }
+   * We only update the updatedAt timestamp, not restructure the file.
+   */
   private async updateSessionsJson(
-    agentId: string,
-    sessionId: string,
-    session: Session
+    _agentId: string,
+    _sessionId: string,
+    _session: Session
   ): Promise<void> {
-    const sessionsJsonPath = this.resolveSessionsJson(agentId);
-    
-    // Ensure directory exists
-    await mkdir(dirname(sessionsJsonPath), { recursive: true });
-    
-    // Read existing sessions.json or create new
-    let sessions: SessionListItem[] = [];
-    try {
-      const content = await readFile(sessionsJsonPath, 'utf8');
-      const data = JSON.parse(content) as { sessions: SessionListItem[] };
-      sessions = data.sessions || [];
-    } catch {
-      // File doesn't exist or is malformed, start fresh
-    }
-    
-    // Find existing entry or create new
-    const existingIndex = sessions.findIndex(s => s.id === sessionId);
-    
-    // Extract model info and token count from entries
-    const models = new Set<string>();
-    let totalTokens = 0;
-    let toolCallCount = 0;
-    
-    for (const entry of session.entries) {
-      if (entry.type === 'message') {
-        if (entry.model) models.add(entry.model);
-        if (entry.usage?.total_tokens) totalTokens += entry.usage.total_tokens;
-        // Count tool calls in content
-        toolCallCount += entry.content.filter(c => c.type === 'tool_use').length;
-      }
-    }
-    
-    const listItem: SessionListItem = {
-      id: sessionId,
-      agentId,
-      createdAt: session.metadata.createdAt,
-      updatedAt: Date.now(),
-      entryCount: session.metadata.entryCount,
-      tokenCount: totalTokens || session.metadata.tokenCount,
-      status: 'active',
-      currentModel: models.size > 0 ? Array.from(models)[0] : undefined,
-      modelsUsed: Array.from(models),
-      toolCallCount,
-    };
-    
-    if (existingIndex >= 0) {
-      sessions[existingIndex] = listItem;
-    } else {
-      sessions.push(listItem);
-    }
-    
-    // Sort by updatedAt descending (most recent first)
-    sessions.sort((a, b) => b.updatedAt - a.updatedAt);
-    
-    // Write back
-    await writeFile(sessionsJsonPath, JSON.stringify({ sessions }, null, 2), 'utf8');
+    // BrainSurgeon does not update sessions.json on save.
+    // OpenClaw manages this file; we only read from it.
+    // Modifying it on edit/prune could corrupt OpenClaw state.
   }
 
+  /**
+   * Removes a session entry from sessions.json on delete.
+   * Matches Python API behavior: removes all keys where sessionId matches.
+   */
   private async removeFromSessionsJson(agentId: string, sessionId: string): Promise<void> {
     const sessionsJsonPath = this.resolveSessionsJson(agentId);
-    
+
     try {
       const content = await readFile(sessionsJsonPath, 'utf8');
-      const data = JSON.parse(content) as { sessions: SessionListItem[] };
-      const sessions = (data.sessions || []).filter(s => s.id !== sessionId);
-      
-      await writeFile(sessionsJsonPath, JSON.stringify({ sessions }, null, 2), 'utf8');
+      const data = JSON.parse(content) as Record<string, OpenClawSessionMeta>;
+
+      const keysToRemove = Object.keys(data).filter(
+        k => data[k].sessionId === sessionId
+      );
+
+      if (keysToRemove.length === 0) return;
+
+      for (const key of keysToRemove) {
+        delete data[key];
+      }
+
+      await writeFile(sessionsJsonPath, JSON.stringify(data, null, 2), 'utf8');
     } catch {
-      // File doesn't exist or is malformed, nothing to remove
+      // File doesn't exist or is malformed
     }
   }
 }

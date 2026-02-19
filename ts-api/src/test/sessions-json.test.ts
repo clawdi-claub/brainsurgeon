@@ -1,201 +1,129 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileSystemSessionRepository } from '../domains/session/repository/session-repository.js';
 import { OpenClawLockAdapter } from '../domains/lock/adapters/openclaw-lock-adapter.js';
-import type { Session, SessionEntry } from '../domains/session/models/entry.js';
 
-describe('SessionRepository sessions.json sync', () => {
-  let tempDir: string;
+describe('SessionRepository with OpenClaw file structure', () => {
+  let agentsDir: string;
   let repository: FileSystemSessionRepository;
   let lockService: OpenClawLockAdapter;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), 'bs-test-'));
+    agentsDir = mkdtempSync(join(tmpdir(), 'bs-agents-'));
     lockService = new OpenClawLockAdapter();
-    repository = new FileSystemSessionRepository(tempDir, lockService);
+    repository = new FileSystemSessionRepository(agentsDir, lockService);
   });
 
   afterEach(() => {
-    rmSync(tempDir, { recursive: true, force: true });
+    rmSync(agentsDir, { recursive: true, force: true });
   });
 
-  it('should create sessions.json entry on save', async () => {
-    const agentId = 'test-agent';
-    const sessionId = 'test-session-1';
-    
-    const entries: SessionEntry[] = [
-      {
-        id: 'entry-1',
-        type: 'message',
-        role: 'user',
-        content: [{ type: 'text', text: 'Hello' }],
-        timestamp: Date.now(),
-      },
-    ];
+  it('should list agents by scanning directories', async () => {
+    mkdirSync(join(agentsDir, 'agent-a', 'sessions'), { recursive: true });
+    mkdirSync(join(agentsDir, 'agent-b', 'sessions'), { recursive: true });
 
-    const session: Session = {
-      id: sessionId,
-      agentId,
-      entries,
-      metadata: {
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        entryCount: entries.length,
+    const sessions = await repository.list();
+    // No sessions.json yet so empty, but agents exist
+    expect(sessions).toHaveLength(0);
+  });
+
+  it('should list sessions from OpenClaw map-format sessions.json', async () => {
+    const agentId = 'test-agent';
+    const sessionsDir = join(agentsDir, agentId, 'sessions');
+    mkdirSync(sessionsDir, { recursive: true });
+
+    // Write OpenClaw-format sessions.json (map of key -> metadata)
+    const sessionsJson = {
+      'agent:test-agent:direct:123': {
+        sessionId: 'sess-aaa',
+        updatedAt: 1700000000000,
+        chatType: 'direct',
+        origin: { label: 'Test User' },
+      },
+      'agent:test-agent:direct:456': {
+        sessionId: 'sess-bbb',
+        updatedAt: 1700001000000,
+        chatType: 'direct',
+        origin: { label: 'Other User' },
       },
     };
 
-    await repository.save(agentId, sessionId, session);
+    writeFileSync(join(sessionsDir, 'sessions.json'), JSON.stringify(sessionsJson));
 
-    // Verify sessions.json was created
-    const sessionsJsonPath = join(tempDir, agentId, 'sessions.json');
-    expect(existsSync(sessionsJsonPath)).toBe(true);
+    const sessions = await repository.list(agentId);
+    expect(sessions).toHaveLength(2);
 
-    // Verify content
-    const content = readFileSync(sessionsJsonPath, 'utf8');
-    const data = JSON.parse(content);
-    expect(data.sessions).toHaveLength(1);
-    expect(data.sessions[0].id).toBe(sessionId);
-    expect(data.sessions[0].agentId).toBe(agentId);
-    expect(data.sessions[0].entryCount).toBe(1);
-    expect(data.sessions[0].status).toBe('active');
+    // Should be sorted by updatedAt descending
+    expect(sessions[0].id).toBe('sess-bbb');
+    expect(sessions[1].id).toBe('sess-aaa');
+    expect(sessions[0].title).toBe('Other User');
   });
 
-  it('should update existing sessions.json entry', async () => {
+  it('should load a session from JSONL file', async () => {
     const agentId = 'test-agent';
-    const sessionId = 'test-session-1';
-    
-    // Save initial version
-    const entries1: SessionEntry[] = [
-      {
-        id: 'entry-1',
-        type: 'message',
-        role: 'user',
-        content: [{ type: 'text', text: 'Hello' }],
-        timestamp: Date.now(),
-      },
+    const sessionId = 'test-session';
+    const sessionsDir = join(agentsDir, agentId, 'sessions');
+    mkdirSync(sessionsDir, { recursive: true });
+
+    // Write a JSONL session file
+    const entries = [
+      { id: 'e1', type: 'message', role: 'user', content: [{ type: 'text', text: 'Hello' }], timestamp: 1700000000000 },
+      { id: 'e2', type: 'message', role: 'assistant', content: [{ type: 'text', text: 'Hi' }], timestamp: 1700000001000, model: 'test-model' },
     ];
 
-    await repository.save(agentId, sessionId, {
-      id: sessionId,
-      agentId,
-      entries: entries1,
-      metadata: {
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        entryCount: entries1.length,
-      },
-    });
+    const jsonl = entries.map(e => JSON.stringify(e)).join('\n') + '\n';
+    writeFileSync(join(sessionsDir, `${sessionId}.jsonl`), jsonl);
 
-    // Save updated version with more entries
-    const entries2: SessionEntry[] = [
-      ...entries1,
-      {
-        id: 'entry-2',
-        type: 'message',
-        role: 'assistant',
-        content: [{ type: 'text', text: 'Hi there' }],
-        timestamp: Date.now(),
-        model: 'test-model',
-      },
-    ];
-
-    await repository.save(agentId, sessionId, {
-      id: sessionId,
-      agentId,
-      entries: entries2,
-      metadata: {
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        entryCount: entries2.length,
-      },
-    });
-
-    // Verify sessions.json was updated
-    const sessionsJsonPath = join(tempDir, agentId, 'sessions.json');
-    const content = readFileSync(sessionsJsonPath, 'utf8');
-    const data = JSON.parse(content);
-    
-    expect(data.sessions).toHaveLength(1);
-    expect(data.sessions[0].entryCount).toBe(2);
-    expect(data.sessions[0].modelsUsed).toContain('test-model');
+    const session = await repository.load(agentId, sessionId);
+    expect(session.entries).toHaveLength(2);
+    expect(session.agentId).toBe(agentId);
+    expect(session.id).toBe(sessionId);
   });
 
-  it('should remove from sessions.json on delete', async () => {
+  it('should remove session from sessions.json on delete', async () => {
     const agentId = 'test-agent';
-    const sessionId = 'test-session-1';
-    
-    // Create session first
-    const entries: SessionEntry[] = [
-      {
-        id: 'entry-1',
-        type: 'message',
-        role: 'user',
-        content: [{ type: 'text', text: 'Hello' }],
-        timestamp: Date.now(),
-      },
-    ];
+    const sessionId = 'test-session';
+    const sessionsDir = join(agentsDir, agentId, 'sessions');
+    mkdirSync(sessionsDir, { recursive: true });
 
-    await repository.save(agentId, sessionId, {
-      id: sessionId,
-      agentId,
-      entries,
-      metadata: {
-        createdAt: Date.now(),
+    // Create trash dir
+    mkdirSync(join(agentsDir, '.trash', agentId), { recursive: true });
+
+    // Write session file
+    writeFileSync(
+      join(sessionsDir, `${sessionId}.jsonl`),
+      JSON.stringify({ id: 'e1', type: 'message', role: 'user', content: [{ type: 'text', text: 'test' }], timestamp: Date.now() }) + '\n'
+    );
+
+    // Write sessions.json with the session
+    const sessionsJson = {
+      'agent:test-agent:direct:123': {
+        sessionId: sessionId,
         updatedAt: Date.now(),
-        entryCount: entries.length,
       },
-    });
-
-    // Verify it exists
-    const sessionsJsonPath = join(tempDir, agentId, 'sessions.json');
-    let content = readFileSync(sessionsJsonPath, 'utf8');
-    let data = JSON.parse(content);
-    expect(data.sessions).toHaveLength(1);
+      'agent:test-agent:direct:456': {
+        sessionId: 'other-session',
+        updatedAt: Date.now(),
+      },
+    };
+    writeFileSync(join(sessionsDir, 'sessions.json'), JSON.stringify(sessionsJson));
 
     // Delete the session
     await repository.delete(agentId, sessionId);
 
-    // Verify it's removed from sessions.json
-    content = readFileSync(sessionsJsonPath, 'utf8');
-    data = JSON.parse(content);
-    expect(data.sessions).toHaveLength(0);
-  });
+    // Verify it was removed from sessions.json
+    const content = readFileSync(join(sessionsDir, 'sessions.json'), 'utf8');
+    const data = JSON.parse(content);
 
-  it('should list sessions from sessions.json', async () => {
-    const agentId = 'test-agent';
-    
-    // Create multiple sessions
-    for (let i = 1; i <= 3; i++) {
-      const entries: SessionEntry[] = [
-        {
-          id: `entry-${i}`,
-          type: 'message',
-          role: 'user',
-          content: [{ type: 'text', text: `Message ${i}` }],
-          timestamp: Date.now() + i * 1000,
-        },
-      ];
+    // Only the other session should remain
+    const keys = Object.keys(data);
+    expect(keys).toHaveLength(1);
+    expect(data['agent:test-agent:direct:456'].sessionId).toBe('other-session');
 
-      await repository.save(agentId, `session-${i}`, {
-        id: `session-${i}`,
-        agentId,
-        entries,
-        metadata: {
-          createdAt: Date.now() + i * 1000,
-          updatedAt: Date.now() + i * 1000,
-          entryCount: entries.length,
-        },
-      });
-    }
-
-    // List sessions
-    const sessions = await repository.list(agentId);
-    expect(sessions).toHaveLength(3);
-    
-    // All 3 sessions should be present (ordering depends on write timing)
-    const ids = sessions.map(s => s.id).sort();
-    expect(ids).toEqual(['session-1', 'session-2', 'session-3']);
+    // Verify file was moved to trash
+    expect(existsSync(join(sessionsDir, `${sessionId}.jsonl`))).toBe(false);
+    expect(existsSync(join(agentsDir, '.trash', agentId, `${sessionId}.jsonl`))).toBe(true);
   });
 });
