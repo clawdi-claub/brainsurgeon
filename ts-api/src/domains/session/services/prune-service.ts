@@ -1,71 +1,80 @@
+import { join } from 'node:path';
 import type { Session, JsonEntry } from '../models/entry.js';
 import type { SessionRepository } from '../repository/session-repository.js';
 import type { LockService } from '../../lock/services/lock-service.js';
 import type { ExternalStorage } from '../../../infrastructure/external/storage.js';
 
 export interface PruneOptions {
-  keepRecent?: number;        // Keep last N entries
-  removeToolResults?: boolean; // Remove tool result content
-  threshold?: number;         // Messages since tool response before externalizing
+  /** Keep last N tool results. 0 = remove all. -1 = light prune (summarize). Default: 3 */
+  keepRecent?: number;
+  /** Externalize tool results after this many messages. Default: 3 */
+  threshold?: number;
 }
 
 export interface PruneResult {
-  externalized: number;
-  kept: number;
-  externalizedIds: string[];
+  pruned_count: number;
+  original_size: number;
+  new_size: number;
+  externalized?: number;
 }
 
 export class PruneService {
   constructor(
     private sessionRepo: SessionRepository,
     private lockService: LockService,
-    private externalStorage: ExternalStorage
+    private externalStorage: ExternalStorage,
+    private agentsDir: string = '/home/openclaw/.openclaw/agents'
   ) {}
 
-  async execute(agentId: string, sessionId: string, options: PruneOptions = {}): Promise<PruneResult> {
-    const { threshold = 3 } = options;
-    
-    // Load session with lock
-    const sessionFile = this.resolveSessionFile(agentId, sessionId);
+  async execute(
+    agentId: string,
+    sessionId: string,
+    options: PruneOptions = {}
+  ): Promise<PruneResult> {
+    const { keepRecent = 3, threshold = 3 } = options;
+
+    const sessionFile = join(this.agentsDir, agentId, 'sessions', `${sessionId}.jsonl`);
     const lock = await this.lockService.acquire(sessionFile);
-    
+
     try {
       const session = await this.sessionRepo.load(agentId, sessionId);
-      
-      // Identify entries to externalize
-      const toExternalize = this.identifyPrunableEntries(session, threshold);
-      
-      if (toExternalize.length === 0) {
-        return { externalized: 0, kept: session.entries.length, externalizedIds: [] };
-      }
+      const entries = session.entries;
+      const originalSize = JSON.stringify(entries).length;
 
-      // Externalize tool results
-      const keptEntries: JsonEntry[] = [];
-      const externalizedIds: string[] = [];
-      
-      for (const entry of session.entries) {
-        const entryId = entry.id as string;
-        if (toExternalize.includes(entryId) && entry.type === 'tool_result') {
-          // Store full content externally
-          await this.externalStorage.store(agentId, sessionId, entryId, entry);
-          
-          externalizedIds.push(entryId);
-          keptEntries.push(this.createStubEntry(entry));
-        } else {
-          keptEntries.push(entry);
+      let prunedCount = 0;
+
+      if (keepRecent === -1) {
+        // Light prune: truncate very long assistant content
+        const result = this.lightPrune(entries);
+        prunedCount = result.prunedCount;
+
+        if (prunedCount > 0) {
+          await this.sessionRepo.save(agentId, sessionId, { ...session, entries: result.entries });
+        }
+      } else {
+        // Full prune: remove tool result content
+        const result = this.fullPrune(entries, keepRecent);
+        prunedCount = result.prunedCount;
+
+        if (prunedCount > 0) {
+          // Also externalize removed entries for restore_response tool
+          for (const entry of result.externalized) {
+            const entryId = entry.id as string;
+            if (entryId) {
+              await this.externalStorage.store(agentId, sessionId, entryId, entry);
+            }
+          }
+
+          await this.sessionRepo.save(agentId, sessionId, { ...session, entries: result.entries });
         }
       }
 
-      // Save pruned session
-      await this.sessionRepo.save(agentId, sessionId, {
-        ...session,
-        entries: keptEntries,
-      });
+      const newSize = JSON.stringify(session.entries).length;
 
       return {
-        externalized: toExternalize.length,
-        kept: keptEntries.length,
-        externalizedIds,
+        pruned_count: prunedCount,
+        original_size: originalSize,
+        new_size: newSize,
       };
     } finally {
       await lock.release();
@@ -73,50 +82,114 @@ export class PruneService {
   }
 
   /**
-   * Identify entries that can be pruned
-   * Strategy: Externalize tool results after threshold messages
+   * Light prune: truncate very long assistant responses.
+   * Matches Python API light prune (keep_recent = -1).
    */
-  private identifyPrunableEntries(session: Session, threshold: number): string[] {
-    const toPrune: string[] = [];
-    const entries = session.entries;
-    
-    // Find all tool results
-    for (let i = 0; i < entries.length; i++) {
-      const entry = entries[i];
-      const entryType = entry.type as string;
-      
-      // Only process tool_result entries
-      if (entryType !== 'tool_result') continue;
-      
-      // Check if threshold messages have passed since this entry
-      const messagesSince = entries.slice(i + 1).filter(e => {
-        const t = e.type as string;
-        const role = (e.message as Record<string, unknown>)?.role as string | undefined;
-        return t === 'message' && (role === 'user' || role === 'assistant');
-      }).length;
-      
-      if (messagesSince >= threshold) {
-        toPrune.push(entry.id as string);
-      }
-    }
-    
-    return toPrune;
-  }
+  private lightPrune(
+    entries: JsonEntry[]
+  ): { entries: JsonEntry[]; prunedCount: number } {
+    const LONG_TEXT_THRESHOLD = 5000;
+    let prunedCount = 0;
 
-  private createStubEntry(entry: JsonEntry): JsonEntry {
-    // Replace externalized entry with stub
-    if ((entry.type as string) === 'tool_result') {
+    const result = entries.map(entry => {
+      if ((entry.type as string) !== 'message') return entry;
+
+      const msg = entry.message as Record<string, unknown> | undefined;
+      if (!msg || (msg.role as string) !== 'assistant') return entry;
+
+      const content = msg.content;
+      if (typeof content !== 'string' || content.length <= LONG_TEXT_THRESHOLD) return entry;
+
+      const summary = content.slice(0, 500) +
+        `\n\n[... ${content.length - LONG_TEXT_THRESHOLD} chars pruned ...]`;
+
+      prunedCount++;
       return {
         ...entry,
-        content: [{ type: 'text', text: '[Content externalized - use restore_response tool]' }],
+        message: { ...msg, content: summary },
+        _pruned: true,
+        _pruned_type: 'light',
       };
-    }
-    return entry;
+    });
+
+    return { entries: result, prunedCount };
   }
 
-  private resolveSessionFile(agentId: string, sessionId: string): string {
-    // This is a hack - repo should expose this
-    // TODO: Add getSessionPath to repository interface
-    return `/home/openclaw/.openclaw/sessions/${agentId}/${sessionId}.jsonl`;
+  /**
+   * Full prune: remove old tool result content.
+   * Matches Python API full prune (keep_recent >= 0).
+   */
+  private fullPrune(
+    entries: JsonEntry[],
+    keepRecent: number
+  ): { entries: JsonEntry[]; prunedCount: number; externalized: JsonEntry[] } {
+    // Find all tool-result-like entry indices
+    const toolResultIndices = this.findToolResultIndices(entries);
+
+    // Calculate which to prune (keep the last N)
+    const pruneIndices = keepRecent > 0
+      ? new Set(toolResultIndices.slice(0, -keepRecent))
+      : new Set(toolResultIndices);
+
+    const externalized: JsonEntry[] = [];
+    let prunedCount = 0;
+
+    const result = entries.map((entry, i) => {
+      if (!pruneIndices.has(i)) return entry;
+
+      externalized.push(entry);
+      prunedCount++;
+      return this.createPrunedStub(entry);
+    });
+
+    return { entries: result, prunedCount, externalized };
+  }
+
+  /** Find indices of tool result entries (matching OpenClaw format) */
+  private findToolResultIndices(entries: JsonEntry[]): number[] {
+    const indices: number[] = [];
+
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      const type = entry.type as string;
+
+      if (type === 'tool_result' || type === 'tool') {
+        indices.push(i);
+        continue;
+      }
+
+      if (type === 'message') {
+        const msg = entry.message as Record<string, unknown> | undefined;
+        if (!msg) continue;
+
+        const role = msg.role as string;
+        if (role === 'toolResult' || role === 'tool') {
+          indices.push(i);
+        }
+      }
+    }
+
+    return indices;
+  }
+
+  private createPrunedStub(entry: JsonEntry): JsonEntry {
+    const type = entry.type as string;
+
+    if (type === 'message') {
+      const msg = (entry.message as Record<string, unknown>) || {};
+      return {
+        ...entry,
+        message: { ...msg, content: '[pruned]' },
+        _pruned: true,
+        _pruned_type: 'full',
+      };
+    }
+
+    return {
+      ...entry,
+      content: '[pruned]',
+      _pruned: true,
+      _pruned_type: 'full',
+    };
   }
 }
