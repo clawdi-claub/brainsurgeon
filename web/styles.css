@@ -348,14 +348,15 @@ body {
     padding: 2px 6px;
     border-radius: 4px;
     background: var(--accent-cyan);
-    color: #000;
+    color: var(--bg-primary);
     margin-left: 4px;
     font-weight: 600;
+    box-shadow: 0 0 4px rgba(0, 212, 170, 0.4);
 }
 
 .session-model.inactive {
     background: var(--text-tertiary);
-    color: var(--bg-primary);
+    color: var(--text-secondary);
 }
 
 .session-flow {
@@ -599,6 +600,54 @@ body {
     color: var(--text-primary);
 }
 
+.modal-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.modal-action-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+    padding: 0;
+}
+
+.modal-action-btn:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--accent-cyan);
+    color: var(--accent-cyan);
+}
+
+.modal-action-btn.danger:hover {
+    border-color: var(--accent-red);
+    color: var(--accent-red);
+}
+
+.modal-action-btn .material-icons-round {
+    font-size: 18px;
+}
+
+.btn-icon {
+    padding: 6px;
+    min-width: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-icon .material-icons-round {
+    font-size: 18px;
+}
+
 .loading {
     text-align: center;
     padding: 40px;
@@ -801,11 +850,13 @@ body {
 }
 
 .refresh-dot {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
     background: var(--accent-green);
     border-radius: 50%;
-    animation: pulse 2s infinite;
+    animation: pulse 1.5s infinite;
+    box-shadow: 0 0 6px var(--accent-green), inset 0 0 2px rgba(255,255,255,0.3);
+    border: 1px solid rgba(255,255,255,0.2);
 }
 
 .refresh-dot.stopped {

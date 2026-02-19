@@ -97,7 +97,18 @@
                     </div>
                     <div class="session-models" id="modalModels"></div>
                 </div>
-                <button class="close-x" onclick="closeViewModal()">×</button>
+                <div class="modal-actions">
+                    <button class="modal-action-btn" id="compactBtn" onclick="confirmCompactSession()" title="Compact session">
+                        <span class="material-icons-round">compress</span>
+                    </button>
+                    <button class="modal-action-btn" id="pruneBtn" onclick="confirmPruneSession()" title="Prune session">
+                        <span class="material-icons-round">content_cut</span>
+                    </button>
+                    <button class="modal-action-btn danger" id="deleteBtn" onclick="confirmDeleteSession()" title="Delete session">
+                        <span class="material-icons-round">delete</span>
+                    </button>
+                    <button class="close-x" onclick="closeViewModal()">×</button>
+                </div>
             </div>
 
             <!-- Session Details Panel -->

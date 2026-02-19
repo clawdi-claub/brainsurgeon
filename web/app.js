@@ -344,9 +344,15 @@ function renderSessions() {
                 <span class="status-${s.status}">${s.updated ? formatDateTime(s.updated) : '—'}</span>
             </div>
             <div class="session-actions" onclick="event.stopPropagation()">
-                <button class="btn" onclick="viewSession('${s.agent}', '${s.id}')">View</button>
-                <button class="btn" onclick="showPruneDialog('${s.agent}', '${s.id}')">Prune</button>
-                <button class="btn btn-danger" onclick="showDeleteDialog('${s.agent}', '${s.id}', '${escapeHtml(s.label)}')">Delete</button>
+                <button class="btn btn-icon" onclick="viewSession('${s.agent}', '${s.id}')" title="View">
+                    <span class="material-icons-round">visibility</span>
+                </button>
+                <button class="btn btn-icon" onclick="showPruneDialog('${s.agent}', '${s.id}')" title="Prune">
+                    <span class="material-icons-round">content_cut</span>
+                </button>
+                <button class="btn btn-icon btn-danger" onclick="showDeleteDialog('${s.agent}', '${s.id}', '${escapeHtml(s.label)}')" title="Delete">
+                    <span class="material-icons-round">delete</span>
+                </button>
             </div>
         </div>
     `}).join('');
@@ -546,10 +552,36 @@ async function confirmDelete(agent, id) {
 
     try {
         await apiRequest(`${API}/sessions/${agent}/${id}`, { method: 'DELETE' });
+        closeViewModal();
         loadSessions();
     } catch (e) {
         alert('Delete failed');
     }
+}
+
+// Modal action button handlers
+function confirmDeleteSession() {
+    if (!currentViewSession) return;
+    const { agent, id } = currentViewSession;
+    showDeleteDialog(agent, id, 'this session');
+}
+
+function confirmPruneSession() {
+    if (!currentViewSession) return;
+    const { agent, id } = currentViewSession;
+    showPruneDialog(agent, id);
+}
+
+async function confirmCompactSession() {
+    if (!currentViewSession) return;
+    const { agent, id } = currentViewSession;
+    
+    // For now, show a message that compact is not yet implemented
+    // This will use OpenClaw's built-in compaction when available
+    const bodyHtml = `<p>Session compaction will trigger OpenClaw's built-in context compaction.</p>
+        <p>This feature requires OpenClaw integration via the <code>/sessions/{agent}/{id}/compact</code> endpoint.</p>`;
+    const footerHtml = `<button class="btn" onclick="closeCustomModal()">Cancel</button>`;
+    showCustomModal('Compact Session (Coming Soon)', bodyHtml, footerHtml);
 }
 
 function toggleMetadata() {
