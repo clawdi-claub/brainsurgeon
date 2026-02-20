@@ -265,6 +265,38 @@ app.route('/', apiAppWithMiddleware);
 
 // Start message bus, cron service, and server
 async function main() {
+  // Subscribe to messages from extension via bus
+  messageBus.subscribe('message_written', async (msg) => {
+    log.debug({ payload: msg.payload }, 'bus: message_written received');
+  });
+
+  messageBus.subscribe('session.created', async (msg) => {
+    log.debug({ payload: msg.payload }, 'bus: session.created received');
+  });
+
+  messageBus.subscribe('prune.request', async (msg) => {
+    const { agentId, sessionId, threshold } = msg.payload as any;
+    log.debug({ agentId, sessionId, threshold }, 'bus: prune.request received');
+    try {
+      const result = await pruneService.execute(agentId, sessionId, { threshold });
+      await messageBus.publish('prune.response', {
+        agentId,
+        sessionId,
+        externalized: result.externalized ?? 0,
+        success: true,
+      });
+    } catch (err: any) {
+      log.error({ err, agentId, sessionId }, 'prune.request handler failed');
+      await messageBus.publish('prune.response', {
+        agentId,
+        sessionId,
+        externalized: 0,
+        success: false,
+        error: err.message,
+      });
+    }
+  });
+
   await messageBus.start();
   log.info('message bus started');
 

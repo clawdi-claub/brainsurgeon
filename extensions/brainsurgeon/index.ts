@@ -1,6 +1,8 @@
 import { Type } from '@sinclair/typebox';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { createRequire } from 'node:module';
+import { randomUUID } from 'node:crypto';
 
 // Full OpenClaw Plugin API interface (provided by OpenClaw at runtime)
 interface PluginApi {
@@ -9,10 +11,12 @@ interface PluginApi {
   version?: string;
   description?: string;
   config: {
+    agentsDir?: string;
     apiUrl?: string;
     enableAutoPrune?: boolean;
     autoPruneThreshold?: number;
-    keepRestoreRemoteCalls?: boolean; // Debug toggle
+    keepRestoreRemoteCalls?: boolean;
+    busDbPath?: string;
   };
   registerTool: (tool: ToolDefinition) => void;
   registerCommand: (command: CommandDefinition) => void;
@@ -52,6 +56,89 @@ interface CommandResult {
   message?: string;
   error?: string;
 }
+
+// ── Lightweight message bus client (node:sqlite) ──────────────────────
+// Same schema as ts-api/src/infrastructure/bus/sqlite-bus.ts.
+// Extension and API share the same bus.db via WAL-mode SQLite.
+
+const _require = createRequire(import.meta.url);
+const { DatabaseSync } = _require('node:sqlite') as typeof import('node:sqlite');
+
+type MessageType = string;
+interface BusMessage { id: string; type: string; payload: unknown; timestamp: number; source: string; }
+type BusHandler = (msg: BusMessage) => void | Promise<void>;
+
+class ExtensionBus {
+  private db: InstanceType<typeof DatabaseSync> | null = null;
+  private handlers = new Map<MessageType, Set<BusHandler>>();
+  private pollTimer: NodeJS.Timeout | null = null;
+
+  open(dbPath: string): void {
+    this.db = new DatabaseSync(dbPath);
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS messages (
+        id TEXT PRIMARY KEY, type TEXT NOT NULL, payload TEXT NOT NULL,
+        timestamp INTEGER NOT NULL, source TEXT NOT NULL,
+        processed INTEGER NOT NULL DEFAULT 0, processed_at INTEGER,
+        retry_count INTEGER NOT NULL DEFAULT 0, error TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_messages_processed ON messages(processed);
+    `);
+    this.db.exec('PRAGMA journal_mode=WAL');
+  }
+
+  publish(type: MessageType, payload: unknown): void {
+    if (!this.db) return;
+    const id = randomUUID();
+    this.db.prepare(
+      'INSERT INTO messages (id,type,payload,timestamp,source,processed) VALUES (?,?,?,?,?,0)'
+    ).run(id, type, JSON.stringify(payload), Date.now(), 'extension');
+    api?.log.debug(`bus: published ${type} (${id})`);
+  }
+
+  subscribe(type: MessageType, handler: BusHandler): void {
+    if (!this.handlers.has(type)) this.handlers.set(type, new Set());
+    this.handlers.get(type)!.add(handler);
+  }
+
+  start(intervalMs = 200): void {
+    this.poll(); // replay on start
+    this.pollTimer = setInterval(() => this.poll(), intervalMs);
+  }
+
+  stop(): void {
+    if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; }
+    if (this.db) { this.db.close(); this.db = null; }
+  }
+
+  private poll(): void {
+    if (!this.db) return;
+    const rows = this.db.prepare(
+      `SELECT id,type,payload,timestamp,source FROM messages
+       WHERE processed=0 AND retry_count<3 ORDER BY timestamp ASC`
+    ).all() as unknown as Array<{ id: string; type: string; payload: string; timestamp: number; source: string }>;
+
+    for (const row of rows) {
+      const handlers = this.handlers.get(row.type);
+      if (!handlers || handlers.size === 0) {
+        // Not our message type — leave for the API to process
+        continue;
+      }
+      const msg: BusMessage = { ...row, payload: JSON.parse(row.payload) };
+      for (const h of handlers) {
+        try { h(msg); } catch (err: any) {
+          api?.log.error(`bus handler error for ${row.type}: ${err.message}`);
+          this.db!.prepare('UPDATE messages SET retry_count=retry_count+1, error=? WHERE id=?')
+            .run(String(err).slice(0, 1000), row.id);
+        }
+      }
+      this.db.prepare('UPDATE messages SET processed=1, processed_at=? WHERE id=?')
+        .run(Date.now(), row.id);
+    }
+  }
+}
+
+const bus = new ExtensionBus();
 
 // Global API reference (set during activate)
 let api: PluginApi | null = null;
@@ -116,32 +203,7 @@ async function releaseLock(lockFile: string): Promise<void> {
 /**
  * Forward event to TypeScript API
  */
-async function forwardToApi(endpoint: string, data: any): Promise<void> {
-  const apiUrl = api?.config?.apiUrl || 'http://localhost:8000';
-  const url = `${apiUrl}${endpoint}`;
-  
-  try {
-    // Use fetch if available, otherwise skip
-    if (typeof fetch === 'undefined') {
-      api?.log.debug(`Skipping event forward (no fetch): ${url}`);
-      return;
-    }
-    
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    
-    if (!response.ok) {
-      api?.log.error(`Failed to forward event to ${endpoint}: ${response.status}`);
-    } else {
-      api?.log.debug(`Event forwarded to ${endpoint}`);
-    }
-  } catch (err: any) {
-    api?.log.error(`error forwarding event to ${endpoint}: ${err.message}`);
-  }
-}
+// forwardToApi removed — all event forwarding now goes through the shared SQLite message bus
 
 /**
  * Parse restore_remote tool arguments
@@ -271,8 +333,8 @@ async function restoreRemoteContent(
       
       api.log.info(`Restored ${restoredKeys.length} keys for entry ${entryId} in session ${sessionId}`);
       
-      // Notify TypeScript API
-      await forwardToApi('/api/events/content-restored', {
+      // Notify via message bus
+      bus.publish('entry_restored', {
         agentId,
         sessionId,
         entryId,
@@ -368,38 +430,27 @@ export async function activate(pluginApi: PluginApi): Promise<void> {
   api.on('message_written', async (event: any) => {
     api?.log.debug(`message_written event: ${JSON.stringify(event)}`);
     
-    // Forward to TypeScript API
-    await forwardToApi('/api/events/message-written', event);
+    // Publish to message bus (API subscribes)
+    bus.publish('message_written', event);
     
     // Auto-trigger smart pruning if enabled
     if (api?.config?.enableAutoPrune !== false) {
       const threshold = api?.config?.autoPruneThreshold || 3;
       
-      // Check if pruning conditions met
-      try {
-        const apiUrl = api?.config?.apiUrl || 'http://localhost:8000';
-        const response = await fetch(`${apiUrl}/api/sessions/${event.agentId}/${event.sessionId}/prune/smart`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ threshold }),
-        });
-        
-        if (response.ok) {
-          const result = await response.json();
-          if (result.pruned > 0) {
-            api?.log.info(`Auto-pruned ${result.pruned} entries for ${event.sessionId}`);
-          }
-        }
-      } catch (err: any) {
-        api?.log.error(`auto-prune failed: ${err.message}`);
-      }
+      // Request prune via message bus
+      bus.publish('prune.request', {
+        agentId: event.agentId,
+        sessionId: event.sessionId,
+        threshold,
+      });
+      api?.log.debug(`auto-prune request published for ${event.sessionId}`);
     }
   });
 
   // Subscribe to session_created events
   api.on('session_created', async (event: any) => {
     api?.log.debug(`session_created event: ${JSON.stringify(event)}`);
-    await forwardToApi('/api/events/session-created', event);
+    bus.publish('session.created', event);
   });
 
   // Register compact command for OpenClaw integration
@@ -425,8 +476,8 @@ export async function activate(pluginApi: PluginApi): Promise<void> {
           triggeredBy: 'brainsurgeon',
         });
         
-        // Notify TypeScript API
-        await forwardToApi('/api/events/compaction-triggered', {
+        // Notify via message bus
+        bus.publish('session.compacted', {
           agentId,
           sessionId,
           instructions: prompt,
@@ -447,44 +498,47 @@ export async function activate(pluginApi: PluginApi): Promise<void> {
     },
   });
 
-  // Register HTTP route for external compact trigger (from TypeScript API)
-  api.registerHttpRoute({
-    path: '/trigger-compact',
-    async handler(req: any, res: any) {
-      try {
-        const body = await req.json?.() || {};
-        const { agentId, sessionId, instructions } = body;
-        
-        if (!agentId || !sessionId) {
-          res.statusCode = 400;
-          res.end(JSON.stringify({ error: 'Missing agentId or sessionId' }));
-          return;
-        }
-        
-        api?.log.info(`HTTP compact trigger for ${agentId}/${sessionId}`);
-        
-        // Emit compaction event
-        api?.emit('before_compaction', {
-          agentId,
-          sessionId,
-          customInstructions: instructions,
-          triggeredBy: 'brainsurgeon-api',
-        });
-        
-        res.statusCode = 200;
-        res.end(JSON.stringify({
-          success: true,
-          message: 'Compaction triggered',
-          agentId,
-          sessionId,
-        }));
-      } catch (err: any) {
-        api?.log.error(`HTTP compact trigger failed: ${err.message}`);
-        res.statusCode = 500;
-        res.end(JSON.stringify({ error: err.message }));
-      }
-    },
+  // Subscribe to compact.request from message bus (sent by API when web UI triggers compact)
+  bus.subscribe('compact.request', (msg) => {
+    const { agentId, sessionId, instructions } = msg.payload as any;
+    api?.log.info(`compact.request received via bus for ${agentId}/${sessionId}`);
+    
+    // Emit before_compaction event to trigger OpenClaw's compaction
+    api?.emit('before_compaction', {
+      agentId,
+      sessionId,
+      customInstructions: instructions,
+      triggeredBy: 'brainsurgeon-api',
+    });
+    
+    // Acknowledge via bus
+    bus.publish('compact.response', {
+      agentId,
+      sessionId,
+      success: true,
+    });
   });
+
+  // Subscribe to prune.response from API (result of prune.request)
+  bus.subscribe('prune.response', (msg) => {
+    const payload = msg.payload as any;
+    if (payload.success && payload.externalized > 0) {
+      api?.log.info(`prune completed: ${payload.externalized} entries externalized for ${payload.sessionId}`);
+    }
+  });
+
+  // Start the message bus polling
+  const busDbPath = api.config?.busDbPath || '/home/openclaw/.openclaw/brainsurgeon/bus.db';
+  try {
+    // Ensure bus directory exists
+    const busDir = path.dirname(busDbPath);
+    await fs.mkdir(busDir, { recursive: true });
+    bus.open(busDbPath);
+    bus.start();
+    api.log.info(`message bus connected: ${busDbPath}`);
+  } catch (err: any) {
+    api.log.error(`failed to open message bus: ${err.message}`);
+  }
 
   api.log.info('BrainSurgeon plugin activated successfully');
 }
@@ -495,10 +549,10 @@ export async function activate(pluginApi: PluginApi): Promise<void> {
 export async function deactivate(): Promise<void> {
   api?.log.info('BrainSurgeon plugin deactivating...');
   
-  // Cleanup any resources
-  api = null;
+  // Stop message bus
+  bus.stop();
   
-  // api is already null at this point, so we can't log via api.log
+  api = null;
 }
 
 // Legacy default export for compatibility
