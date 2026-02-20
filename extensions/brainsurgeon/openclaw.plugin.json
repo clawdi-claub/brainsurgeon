@@ -7,6 +7,11 @@
     "type": "object",
     "additionalProperties": false,
     "properties": {
+      "agentsDir": {
+        "type": "string",
+        "description": "Path to OpenClaw agents directory",
+        "default": "/home/openclaw/.openclaw/agents"
+      },
       "apiUrl": {
         "type": "string",
         "description": "Base URL for BrainSurgeon TypeScript API",

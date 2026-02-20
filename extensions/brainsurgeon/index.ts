@@ -182,7 +182,7 @@ async function restoreRemoteContent(
   
   try {
     // Find extracted file
-    const agentsDir = '/home/openclaw/.openclaw/agents';
+    const agentsDir = api?.config?.agentsDir || '/home/openclaw/.openclaw/agents';
     const extractedPath = path.join(agentsDir, agentId, 'sessions', 'extracted', sessionId, `${entryId}.jsonl`);
     
     // Check if extracted file exists
@@ -321,7 +321,7 @@ export async function activate(pluginApi: PluginApi): Promise<void> {
       
       // Determine agent from session context (this would come from OpenClaw context)
       // For now, we need to search across agents to find the session
-      const agentsDir = '/home/openclaw/.openclaw/agents';
+      const agentsDir = api?.config?.agentsDir || '/home/openclaw/.openclaw/agents';
       const agents = await fs.readdir(agentsDir).catch(() => []);
       
       let result: { success: boolean; restoredKeys?: string[]; error?: string } | null = null;
