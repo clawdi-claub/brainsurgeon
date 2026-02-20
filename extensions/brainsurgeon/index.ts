@@ -60,6 +60,8 @@ interface CommandResult {
 // ── Lightweight message bus client (node:sqlite) ──────────────────────
 // Same schema as ts-api/src/infrastructure/bus/sqlite-bus.ts.
 // Extension and API share the same bus.db via WAL-mode SQLite.
+// Pattern matches OpenClaw's default memory provider:
+// https://github.com/openclaw/openclaw/blob/main/src/memory/sqlite.ts
 
 const _require = createRequire(import.meta.url);
 const { DatabaseSync } = _require('node:sqlite') as typeof import('node:sqlite');

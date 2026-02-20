@@ -5,7 +5,8 @@ import { createLogger } from '../../shared/logging/logger.js';
 
 const log = createLogger('message-bus');
 
-// Use node:sqlite (built-in since Node 22.5+) — same approach as OpenClaw core
+// Use node:sqlite (built-in since Node 22.5+) — matches OpenClaw memory provider pattern:
+// https://github.com/openclaw/openclaw/blob/main/src/memory/sqlite.ts
 const require = createRequire(import.meta.url);
 const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite');
 
