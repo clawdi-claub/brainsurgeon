@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { SessionService } from '../services/session-service.js';
 import type { PruneService } from '../services/prune-service.js';
+import type { ExtractionStorage } from '../../prune/extraction/extraction-storage.js';
 import { mapSessionListItem, mapSessionDetail } from './response-mapper.js';
 import { generateSessionSummary } from '../services/summary-service.js';
 import { sanitizeId } from '../../../shared/middleware/sanitize.js';
@@ -11,7 +12,8 @@ const log = createLogger('session-routes');
 
 export function createSessionRoutes(
   sessionService: SessionService,
-  pruneService: PruneService
+  pruneService: PruneService,
+  extractionStorage?: ExtractionStorage,
 ): Hono {
   const app = new Hono();
 
@@ -194,6 +196,40 @@ export function createSessionRoutes(
         return c.json({ error: error.message }, 404);
       }
       throw error;
+    }
+  });
+
+  // GET /sessions/:agent/:id/entries/:entryId/extracted — fetch extracted content
+  app.get('/:agent/:id/entries/:entryId/extracted', async (c) => {
+    const agentId = sanitizeId(c.req.param('agent'), 'agent');
+    const sessionId = sanitizeId(c.req.param('id'), 'session_id');
+    const entryId = c.req.param('entryId');
+
+    if (!extractionStorage) {
+      return c.json({ error: 'Extraction storage not configured' }, 501);
+    }
+
+    try {
+      const data = await extractionStorage.read(agentId, sessionId, entryId);
+      if (!data) {
+        return c.json({ error: 'Extracted content not found' }, 404);
+      }
+
+      const { __meta, ...content } = data;
+      const size = await extractionStorage.sessionSize(agentId, sessionId);
+
+      return c.json({
+        entryId,
+        agent: agentId,
+        session: sessionId,
+        content,
+        meta: __meta || null,
+        sizeBytes: JSON.stringify(data).length,
+        sessionExtracted: size,
+      });
+    } catch (error) {
+      log.error({ err: error, agentId, sessionId, entryId }, 'failed to read extracted content');
+      return c.json({ error: 'Failed to read extracted content' }, 500);
     }
   });
 

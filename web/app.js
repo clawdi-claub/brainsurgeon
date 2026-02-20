@@ -755,6 +755,26 @@ function renderEntryContentNormal(entry) {
     if (entry._pruned) {
         return '<span style="color: var(--accent-yellow)">[pruned]</span>';
     }
+    if (entry._extracted) {
+        // Show a summary placeholder with the non-extracted keys
+        const visibleKeys = Object.keys(entry).filter(k => !k.startsWith('_') && !k.startsWith('__') && entry[k] !== '[[extracted]]');
+        const extractedKeys = Object.keys(entry).filter(k => entry[k] === '[[extracted]]');
+        let html = '<div style="color: var(--text-secondary); font-style: italic;">';
+        html += `<span style="color: #ffc107;">📎 Content extracted (${extractedKeys.length} key${extractedKeys.length !== 1 ? 's' : ''})</span>`;
+        if (extractedKeys.length > 0) {
+            html += `<div style="margin-top: 4px; font-size: 0.85em;">Extracted: ${extractedKeys.map(k => `<code>${escapeHtml(k)}</code>`).join(', ')}</div>`;
+        }
+        html += '</div>';
+        // Also render any remaining non-extracted content normally
+        const remainingEntry = {};
+        for (const k of visibleKeys) {
+            remainingEntry[k] = entry[k];
+        }
+        if (Object.keys(remainingEntry).length > 2) { // More than just type + customType
+            html += renderKeyValueList(remainingEntry, 0);
+        }
+        return html;
+    }
     
     try {
         // For message entries
@@ -937,6 +957,7 @@ function filterEntriesByType(entries) {
         if (currentEntryTypeFilter === 'tool_result') return type === 'tool_result' || type === 'toolResult';
         if (currentEntryTypeFilter === 'thinking') return type === 'thinking_level_change' || (type === 'message' && e.message?.content?.some(c => c.type === 'thinking'));
         if (currentEntryTypeFilter === 'custom') return type === 'custom';
+        if (currentEntryTypeFilter === 'extracted') return e._extracted === true;
         return true;
     });
 }
@@ -1016,6 +1037,9 @@ function filterGroupByType(group) {
     if (currentEntryTypeFilter === 'custom') {
         return entryType === 'custom';
     }
+    if (currentEntryTypeFilter === 'extracted') {
+        return entry._extracted === true;
+    }
     return true;
 }
 
@@ -1090,11 +1114,15 @@ function renderSessionBody(data) {
 function renderEntryWithToggle(entry, index, agent, sessionId) {
     const typeLabel = getEntryTypeLabel(entry);
     const timestamp = entry.timestamp || '';
+    const extractedBadge = entry._extracted
+        ? `<span class="extracted-badge" onclick="event.stopPropagation(); viewExtractedContent('${agent}', '${sessionId}', '${entry.__id || ''}')">📎 extracted</span>`
+        : '';
     
     return `
-    <div class="entry ${entry._pruned ? 'pruned' : ''}" data-entry-index="${index}">
+    <div class="entry ${entry._pruned ? 'pruned' : ''} ${entry._extracted ? 'extracted' : ''}" data-entry-index="${index}">
         <div class="entry-header">
             <span class="entry-type">${typeLabel}</span>
+            ${extractedBadge}
             <div class="entry-header-right">
                 <span class="entry-timestamp">${timestamp}</span>
                 <div class="entry-view-toggle">
@@ -1112,11 +1140,77 @@ function renderEntryWithToggle(entry, index, agent, sessionId) {
             </div>
         </div>
         <div class="entry-actions" onclick="event.stopPropagation()">
+            ${entry._extracted ? `<button class="btn btn-small" onclick="viewExtractedContent('${agent}', '${sessionId}', '${entry.__id || ''}')">View Full</button>` : ''}
             <button class="btn btn-small" onclick="editEntry('${agent}', '${sessionId}', ${index})">Edit</button>
             <button class="btn btn-small btn-danger" onclick="deleteEntry('${agent}', '${sessionId}', ${index})">Delete</button>
         </div>
     </div>
     `;
+}
+
+// Fetch and display extracted content in a modal
+async function viewExtractedContent(agent, sessionId, entryId) {
+    if (!entryId) {
+        showCustomModal('Extracted Content', '<p>No entry ID available for this extracted entry.</p>',
+            '<button class="btn" onclick="closeCustomModal()">Close</button>');
+        return;
+    }
+
+    showCustomModal('Loading Extracted Content', '<div class="loading">Loading...</div>', '');
+
+    try {
+        const r = await apiRequest(`${API}/sessions/${agent}/${sessionId}/entries/${entryId}/extracted`);
+        if (!r.ok) {
+            const err = await r.json().catch(() => ({ error: 'Unknown error' }));
+            showCustomModal('Extracted Content Unavailable',
+                `<p style="color: var(--accent-orange);">Could not load extracted content.</p><p><code>${escapeHtml(err.error)}</code></p>`,
+                '<button class="btn" onclick="closeCustomModal()">Close</button>');
+            return;
+        }
+
+        const data = await r.json();
+        const meta = data.meta || {};
+        const contentKeys = Object.keys(data.content || {});
+
+        let bodyHtml = `
+            <div style="margin-bottom: 12px; padding: 8px; background: var(--bg-tertiary); border-radius: 4px; font-size: 0.85rem;">
+                <div><strong>Entry ID:</strong> <code>${escapeHtml(entryId)}</code></div>
+                <div><strong>Size:</strong> ${formatBytes(data.sizeBytes || 0)}</div>
+                ${meta.trigger_type ? `<div><strong>Trigger:</strong> ${escapeHtml(meta.trigger_type)}</div>` : ''}
+                ${meta.extracted_at ? `<div><strong>Extracted:</strong> ${formatDateTime(meta.extracted_at)}</div>` : ''}
+                ${meta.original_keys ? `<div><strong>Keys:</strong> ${meta.original_keys.map(k => `<code>${escapeHtml(k)}</code>`).join(', ')}</div>` : ''}
+            </div>
+        `;
+
+        // Render each extracted key's content
+        for (const key of contentKeys) {
+            const value = data.content[key];
+            const valueStr = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+            const preview = valueStr.length > 200 ? valueStr.substring(0, 200) + '...' : valueStr;
+            const isLong = valueStr.length > 200;
+
+            bodyHtml += `
+                <div style="margin-bottom: 8px;">
+                    <div style="font-weight: 600; color: var(--accent-cyan); margin-bottom: 4px;">${escapeHtml(key)} <span style="font-weight: 400; font-size: 0.8rem; color: var(--text-secondary);">(${formatBytes(valueStr.length)})</span></div>
+                    ${isLong
+                        ? `<details class="collapsible-text-block"><summary>Show full content (${valueStr.length} chars)</summary><pre style="white-space: pre-wrap; word-break: break-word; max-height: 400px; overflow-y: auto; padding: 8px; background: var(--bg-tertiary); border-radius: 4px; font-size: 0.85rem;">${escapeHtml(valueStr)}</pre></details>`
+                        : `<pre style="white-space: pre-wrap; word-break: break-word; padding: 8px; background: var(--bg-tertiary); border-radius: 4px; font-size: 0.85rem;">${escapeHtml(valueStr)}</pre>`
+                    }
+                </div>
+            `;
+        }
+
+        if (data.sessionExtracted) {
+            bodyHtml += `<div style="margin-top: 12px; font-size: 0.8rem; color: var(--text-secondary);">Session has ${data.sessionExtracted.files} extracted file(s) (${formatBytes(data.sessionExtracted.bytes)} total)</div>`;
+        }
+
+        showCustomModal('📎 Extracted Content', bodyHtml,
+            '<button class="btn" onclick="closeCustomModal()">Close</button>');
+    } catch (e) {
+        showCustomModal('Error',
+            `<p style="color: var(--accent-red);">Failed to fetch extracted content.</p><p><code>${escapeHtml(e.message)}</code></p>`,
+            '<button class="btn" onclick="closeCustomModal()">Close</button>');
+    }
 }
 
 // Current view session for auto-refresh

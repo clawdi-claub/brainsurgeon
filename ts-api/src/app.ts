@@ -70,7 +70,9 @@ const trashService = new TrashService(trashRepository);
 const configRepository = new FileSystemConfigRepository(AGENTS_DIR);
 const configService = new BrainSurgeonConfigService(configRepository);
 
-// Initialize pruning and cron services
+// Initialize extraction storage and pruning/cron services
+import { ExtractionStorage } from './domains/prune/extraction/extraction-storage.js';
+const extractionStorage = new ExtractionStorage({ agentsDir: AGENTS_DIR });
 const pruningExecutor = new SmartPruningExecutor(AGENTS_DIR, sessionRepository);
 const cronService = new SmartPruningCronService(configService, pruningExecutor);
 
@@ -81,7 +83,7 @@ const apiApp = new Hono();
 apiApp.get('/health', (c) => c.json({ status: 'ok', version: '2.0.0' }));
 
 // Mount session routes
-const sessionRoutes = createSessionRoutes(sessionService, pruneService);
+const sessionRoutes = createSessionRoutes(sessionService, pruneService, extractionStorage);
 apiApp.route('/sessions', sessionRoutes);
 
 // Mount trash routes

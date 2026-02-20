@@ -1700,6 +1700,30 @@ body {
     }
 }
 
+/* Extracted entries */
+.extracted-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background: rgba(255, 193, 7, 0.15);
+    color: #ffc107;
+    border: 1px solid rgba(255, 193, 7, 0.3);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    white-space: nowrap;
+}
+.extracted-badge:hover {
+    background: rgba(255, 193, 7, 0.25);
+    border-color: rgba(255, 193, 7, 0.5);
+}
+.entry.extracted {
+    border-left: 3px solid rgba(255, 193, 7, 0.4);
+}
+
 /* Settings form */
 .settings-form { display: flex; flex-direction: column; gap: 14px; }
 .settings-row { display: flex; align-items: center; gap: 12px; }

@@ -1,4 +1,5 @@
 import type { Session, SessionListItem } from '../models/entry.js';
+import { hasExtractedPlaceholders } from '../../prune/extraction/key-level-extraction.js';
 
 /**
  * Maps internal types to Python API-compatible response format
@@ -147,6 +148,14 @@ export function mapSessionDetail(
   const stale = isStale(metadata.updatedAt);
   const stats = analyzeEntries(entries);
 
+  // Annotate entries that have [[extracted]] placeholders
+  const annotatedEntries = entries.map(entry => {
+    if (hasExtractedPlaceholders(entry)) {
+      return { ...entry, _extracted: true };
+    }
+    return entry;
+  });
+
   return {
     id,
     agent: agentId,
@@ -154,7 +163,7 @@ export function mapSessionDetail(
     path: '',
     size: 0,
     raw_content: '',
-    entries,
+    entries: annotatedEntries,
     messages: stats.messages,
     tool_calls: stats.toolCalls,
     tool_outputs: stats.toolOutputs,
