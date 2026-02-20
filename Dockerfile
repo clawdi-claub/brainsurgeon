@@ -38,5 +38,6 @@ EXPOSE 8000
 ENV PORT=8000
 ENV AGENTS_DIR=/data/openclaw/agents
 ENV DATA_DIR=/data
+ENV NODE_ENV=production
 
 CMD ["node", "dist/app.js"]
