@@ -236,7 +236,11 @@ apiAppWithMiddleware.route('/', apiApp);
 
 // Static files - serve web frontend
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const webDir = join(__dirname, '..', '..', 'web');
+// In dev: ts-api/dist/app.js -> ts-api/../web = project-root/web
+// In container: /app/dist/app.js -> /app/web (Dockerfile copies web to /app/web)
+const webDir = process.env.WEB_DIR || (process.env.NODE_ENV === 'production'
+  ? join(__dirname, '..', 'web')  // container: /app/dist/../web = /app/web
+  : join(__dirname, '..', '..', 'web'));  // dev: ts-api/dist/../../web = project-root/web
 
 // Helper to read file safely
 function serveStatic(filename: string) {

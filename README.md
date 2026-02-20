@@ -25,12 +25,13 @@ Browse sessions like flipping through patient charts. Prune bloated tool outputs
 | Feature | Description |
 |---------|-------------|
 | 🔍 **X-Ray Vision** | Browse sessions with full metadata: tokens, models, duration, channels |
-| ✂️ **Neural Pruning** | Strip massive tool outputs while keeping conversation context |
-| 🗑️ **Organ Harvesting** | Delete with trash recovery and optional autopsy reports |
-| ✏️ **Neuroplasticity** | Edit individual messages—rewrite history if you must |
+| ✂️ **Smart Pruning** | Automatically extract massive content (thinking, tool results) to separate files |
+| 🗑️ **Organ Harvesting** | Delete with trash recovery — extracted files move with session |
+| ✏️ **Neuroplasticity** | Edit individual messages — rewrite history if you must |
 | 📊 **Vital Signs** | Token usage analytics, model breakdowns, duration tracking |
 | 🔄 **Resurrection** | Restore sessions from trash (we don't judge) |
-| 🧩 **Smart Collapse** | Auto-collapse long texts (>500 chars) and tool results for clean viewing |
+| 🧩 **Smart Collapse** | Auto-collapse long texts (>500 chars) and tool results |
+| 📎 **Extraction Viewer** | Click extracted entries to view full content on-demand |
 
 ![Session Browser](./screenshots/02-session-opened.png)
 
@@ -45,7 +46,7 @@ Browse sessions like flipping through patient charts. Prune bloated tool outputs
 ### Prerequisites
 
 - OpenClaw installed and running
-- Docker (recommended) or Python 3.12+
+- Docker (recommended) or Node.js 22+
 - Access to your OpenClaw data directory (usually `~/.openclaw`)
 
 ### Install as OpenClaw Extension
@@ -73,16 +74,20 @@ docker-compose up -d
 docker-compose logs -f
 ```
 
-The UI will be available at `http://localhost:8654`
+The UI will be available at `http://localhost:8000`
 
-### Option 2: Run with Python
+### Option 2: Run with Node.js (Development)
 
 ```bash
-# Install dependencies
-pip install fastapi uvicorn pydantic
+cd ts-api
+npm install
+npm run build
+npm start
+```
 
-# Run the API
-python -m uvicorn api.main:app --host 0.0.0.0 --port 8654
+Or for development with auto-reload:
+```bash
+npm run dev
 ```
 
 ### Option 3: For AI Agents
@@ -98,7 +103,7 @@ cd ~/.openclaw/extensions/brainsurgeon
 exec:docker-compose up --build -d
 
 # Verify installation
-exec:curl http://localhost:8654/agents
+exec:curl http://localhost:8000/agents
 ```
 
 ---
@@ -109,8 +114,30 @@ exec:curl http://localhost:8654/agents
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `OPENCLAW_ROOT` | `~/.openclaw` | Path to your OpenClaw data directory |
-| `PORT` | `8654` | Port to run the API server |
+| `PORT` | `8000` | Port to run the API server |
+| `AGENTS_DIR` | `/data/openclaw/agents` | Path to OpenClaw agents directory |
+| `DATA_DIR` | `/data` | Path for BrainSurgeon data (bus.db, etc.) |
+| `LOG_LEVEL` | `info` | Log level (debug, info, warn, error) |
+
+### Smart Pruning Configuration
+
+Smart pruning automatically extracts large content (thinking blocks, tool results) to separate files.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `enabled` | `true` | Enable smart pruning |
+| `trigger_types` | `thinking,tool_result` | Entry types to extract |
+| `age_threshold_hours` | `48` | Only extract entries older than this |
+| `auto_cron` | `*/2 * * * *` | Cron schedule for auto-pruning |
+| `retention` | `24h` | How long to keep extracted files |
+| `retention_cron` | `0 */6 * * *` | Cron schedule for retention cleanup |
+
+Configure via the web UI (⚙️ Settings button) or API:
+```bash
+curl -X POST http://localhost:8000/api/config \
+  -H "Content-Type: application/json" \
+  -d '{"enabled":true,"trigger_types":["thinking","tool_result"],"retention":"48h"}'
+```
 
 ### Security
 
@@ -120,7 +147,7 @@ exec:curl http://localhost:8654/agents
 |----------|---------|-------------|
 | `BRAINSURGEON_API_KEYS` | *(empty)* | Comma-separated list of API keys. When set, all requests must include `X-API-Key` header. |
 | `BRAINSURGEON_READONLY` | `false` | Set to `true` to disable all destructive operations (delete, edit, prune). |
-| `BRAINSURGEON_CORS_ORIGINS` | `http://localhost:8654,http://127.0.0.1:8654` | Comma-separated list of allowed CORS origins. Lock this down to your domain. |
+| `BRAINSURGEON_CORS_ORIGINS` | `http://localhost:8000,http://127.0.0.1:8000` | Comma-separated list of allowed CORS origins. Lock this down to your domain. |
 
 **Example with authentication:**
 ```bash
@@ -131,7 +158,7 @@ export BRAINSURGEON_API_KEYS="bs_live_$(openssl rand -hex 32),bs_backup_$(openss
 docker-compose up -d
 
 # API requests now require the key
-curl -H "X-API-Key: bs_live_..." http://localhost:8654/agents
+curl -H "X-API-Key: bs_live_..." http://localhost:8000/agents
 ```
 
 **Path traversal protection:** Agent names and session IDs are validated to prevent `../` attacks. Only alphanumeric characters, hyphens, and underscores are allowed.
@@ -140,61 +167,46 @@ curl -H "X-API-Key: bs_live_..." http://localhost:8654/agents
 
 **Audit logging:** All destructive operations (delete, edit, prune, restore) are logged to stderr with action, agent, session, and truncated API key.
 
-### Nginx (Reverse Proxy)
-
-When using nginx as a reverse proxy, copy `nginx.conf.template` to `nginx.conf` and set these environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NGINX_SERVER_NAME` | `localhost` | Server name for nginx (your domain) |
-| `SSL_CERT_PATH` | `/etc/nginx/certs/fullchain.pem` | Path to SSL certificate |
-| `SSL_KEY_PATH` | `/etc/nginx/certs/privkey.pem` | Path to SSL private key |
-| `API_HOST` | `127.0.0.1` | Host where BrainSurgeon API runs |
-| `API_PORT` | `8654` | Port where BrainSurgeon API runs |
-
-Generate the config with envsubst:
-```bash
-export NGINX_SERVER_NAME=your-domain.com
-export SSL_CERT_PATH=/path/to/cert.pem
-export SSL_KEY_PATH=/path/to/key.pem
-envsubst '
-  ${NGINX_SERVER_NAME}
-  ${SSL_CERT_PATH}
-  ${SSL_KEY_PATH}
-  ${API_HOST}
-  ${API_PORT}
-' < nginx.conf.template > nginx.conf
-```
-
 ---
 
-## Usage
+## API Endpoints
 
-Once running, open your browser to `http://localhost:8654`
+### Sessions
+- `GET /api/sessions` - List all sessions
+- `GET /api/sessions/:agent` - List sessions for an agent
+- `GET /api/sessions/:agent/:id` - Get session details (entries annotated with `_extracted` flag)
+- `GET /api/sessions/:agent/:id/entries/:entryId/extracted` - Fetch extracted content for an entry
+- `POST /api/sessions/:agent/:id/prune` - Prune session (legacy)
+- `POST /api/sessions/:agent/:id/prune/smart` - Smart prune with extraction
+- `POST /api/sessions/:agent/:id/compact` - Trigger OpenClaw compaction
+- `DELETE /api/sessions/:agent/:id` - Delete session (moves to trash, extracted files included)
 
-### Session Browser
-1. Select an agent from the dropdown
-2. Sessions are sorted by most recent activity
-3. Click any session to open the detail view
+### Trash
+- `GET /api/trash` - List trashed sessions
+- `POST /api/trash/:agent/:id/restore` - Restore session (extracted files included)
+- `DELETE /api/trash/:agent/:id` - Permanently delete (extracted files removed)
+- `POST /api/trash/cleanup` - Delete expired trash items
 
-![Session List](./screenshots/01-main-list.png)
+### Configuration
+- `GET /api/config` - Get smart pruning config
+- `POST /api/config` - Update smart pruning config
+- `GET /api/config/env` - Get environment config (readonly mode, refresh interval)
 
-### Session Detail View
-- View all messages in parsed, readable format
-- See metadata: tokens, model, duration, channel
-- Click "Edit" to modify individual entries
-- Click "Prune" to strip tool outputs
-- Click "Delete" to send to trash
+### Cron
+- `GET /api/cron/jobs` - List cron jobs and status
+- `POST /api/cron/jobs/:name/run` - Manually trigger a job
+- `POST /api/cron/reload` - Reload cron configuration
+- `GET /api/cron/status` - Quick status check
 
-![Session Detail View](./screenshots/02-session-opened.png)
+### Events (OpenClaw Extension Integration)
+- `POST /api/events/message-written` - Notify of new message
+- `POST /api/events/session-created` - Notify of new session
+- `POST /api/events/entry-restored` - Notify of restored entry
 
-![Edit Dialog](./screenshots/05-edit-dialog.png)
-
-### Pruning
-Pruning removes tool output content (keeps the calls). This dramatically reduces file size while preserving conversation flow. Use it when sessions get bloated from large tool responses.
-
-### Deleting
-Deletion moves sessions to trash and removes them from OpenClaw's index. Sessions stay in trash for 14 days before permanent deletion. Use "Restore" to recover them.
+### System
+- `GET /api/health` - Health check
+- `GET /api/agents` - List agents
+- `POST /api/restart` - Restart OpenClaw gateway
 
 ---
 
@@ -202,14 +214,26 @@ Deletion moves sessions to trash and removes them from OpenClaw's index. Session
 
 ```
 brainsurgeon/
-├── api/
-│   └── main.py            # FastAPI backend
-├── web/
-│   ├── index.html         # Frontend UI
-│   └── app.js             # Frontend logic
-├── docs/
-│   └── screenshots/       # Documentation images
-├── extension.yaml         # OpenClaw extension manifest
+├── ts-api/                # TypeScript API server
+│   ├── src/
+│   │   ├── app.ts         # Main entry point
+│   │   ├── domains/       # Domain modules
+│   │   │   ├── config/    # Smart pruning configuration
+│   │   │   ├── lock/      # File locking (OpenClaw-compatible)
+│   │   │   ├── prune/     # Smart pruning + extraction
+│   │   │   │   ├── cron/      # Cron service
+│   │   │   │   ├── extraction/# Extraction storage + trash ops
+│   │   │   │   └── trigger/   # Trigger detection
+│   │   │   ├── session/   # Session management
+│   │   │   └── trash/     # Trash management
+│   │   ├── infrastructure/# Message bus, external storage
+│   │   └── shared/        # Utilities, logging, middleware
+│   ├── package.json
+│   └── tsconfig.json
+├── web/                   # Static web UI
+│   ├── index.html
+│   ├── app.js
+│   └── styles.css
 ├── Dockerfile
 ├── docker-compose.yml
 └── README.md
@@ -217,33 +241,25 @@ brainsurgeon/
 
 ---
 
-## API Endpoints
-
-- `GET /agents` - List all agents
-- `GET /sessions/{agent}` - List sessions for an agent
-- `GET /sessions/{agent}/{session_id}` - Get session details
-- `POST /sessions/{agent}/{session_id}/edit` - Edit session entry
-- `POST /sessions/{agent}/{session_id}/prune` - Prune tool outputs
-- `DELETE /sessions/{agent}/{session_id}` - Delete session
-- `POST /sessions/{agent}/{session_id}/restore` - Restore from trash
-- `GET /trash` - List trashed sessions
-- `DELETE /trash/{filename}` - Permanently delete from trash
-
----
-
-## Safety First
-
-- **Backup recommended**: BrainSurgeon modifies session files. Consider backing up your `~/.openclaw/agents/` directory before major operations.
-- **Undo available**: Deleted sessions go to trash and can be restored within 14 days.
-- **Edit carefully**: Editing modifies the underlying JSONL files directly.
-
----
-
 ## Development
 
 ```bash
+cd ts-api
+
+# Install dependencies
+npm install
+
 # Run in development mode with auto-reload
-python -m uvicorn api.main:app --reload --port 8654
+npm run dev
+
+# Build for production
+npm run build
+
+# Run tests
+npm run test:run
+
+# Type check
+npm run typecheck
 ```
 
 ---
@@ -251,16 +267,21 @@ python -m uvicorn api.main:app --reload --port 8654
 ## Troubleshooting
 
 **Sessions not showing up?**
-- Check that `OPENCLAW_ROOT` points to your actual OpenClaw directory
-- Verify the agents directory exists: `$OPENCLAW_ROOT/agents/`
+- Check that `AGENTS_DIR` points to your actual OpenClaw agents directory
+- Verify the agents directory exists: `$AGENTS_DIR/{agent}/sessions/`
 
 **Permission denied when editing/deleting?**
 - Ensure BrainSurgeon has write access to your OpenClaw directory
 - When using Docker, the volume mount needs proper permissions
 
 **UI not loading?**
-- Check that the API is running: `curl http://localhost:8654/agents`
-- Verify the port isn't already in use: `lsof -i :8654`
+- Check that the API is running: `curl http://localhost:8000/api/agents`
+- Verify the port isn't already in use: `lsof -i :8000`
+
+**Extraction not working?**
+- Check smart pruning config: `curl http://localhost:8000/api/config`
+- Verify `enabled: true` and `trigger_types` includes your entry types
+- Check cron jobs: `curl http://localhost:8000/api/cron/jobs`
 
 ---
 

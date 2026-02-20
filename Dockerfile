@@ -27,6 +27,9 @@ RUN npm ci --only=production
 # Copy built code
 COPY --from=builder /build/dist ./dist
 
+# Copy web UI files (static assets)
+COPY web ./web
+
 # Create data directory
 RUN mkdir -p /data
 
