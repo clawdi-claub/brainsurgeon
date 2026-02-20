@@ -297,6 +297,55 @@ async function main() {
     }
   });
 
+  messageBus.subscribe('restore.request', async (msg) => {
+    const { agentId, sessionId, entryId, keys } = msg.payload as any;
+    log.debug({ agentId, sessionId, entryId }, 'bus: restore.request received');
+    try {
+      const session = await sessionService.getSession(agentId, sessionId);
+      const entry = session.entries.find((e: any) => e.__id === entryId || e.id === entryId);
+      if (!entry) throw new Error(`Entry ${entryId} not found`);
+
+      // Read extracted data
+      const extractedPath = join(AGENTS_DIR, agentId, 'sessions', 'extracted', sessionId, `${entryId}.jsonl`);
+      const { readFile } = await import('node:fs/promises');
+      const extractedContent = await readFile(extractedPath, 'utf-8');
+      const extractedData = JSON.parse(extractedContent);
+
+      const keysToRestore = keys || Object.keys(extractedData).filter((k: string) => !k.startsWith('__'));
+      const restoredKeys: string[] = [];
+
+      // Restore extracted values into entry
+      function restoreInObject(obj: any, pathPrefix: string[] = []): void {
+        for (const key of Object.keys(obj)) {
+          const fullPath = [...pathPrefix, key];
+          if (obj[key] === '[[extracted]]') {
+            let val = extractedData;
+            for (const p of fullPath) { if (val && typeof val === 'object') val = val[p]; else { val = undefined; break; } }
+            if (val !== undefined) { obj[key] = val; restoredKeys.push(fullPath.join('.')); }
+          } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+            restoreInObject(obj[key], fullPath);
+          }
+        }
+      }
+      restoreInObject(entry);
+      (entry as any).__restored_at = new Date().toISOString();
+      (entry as any).__restored_keys = restoredKeys;
+
+      // Save session (uses API lock adapter)
+      await sessionService.editEntry(agentId, sessionId, entryId, entry);
+
+      await messageBus.publish('restore.response', {
+        agentId, sessionId, toolCallId: entryId, success: true, restoredKeys,
+      });
+      log.info({ agentId, sessionId, entryId, count: restoredKeys.length }, 'restore completed');
+    } catch (err: any) {
+      log.error({ err, agentId, sessionId, entryId }, 'restore.request handler failed');
+      await messageBus.publish('restore.response', {
+        agentId, sessionId, toolCallId: entryId, success: false, error: err.message,
+      });
+    }
+  });
+
   await messageBus.start();
   log.info('message bus started');
 

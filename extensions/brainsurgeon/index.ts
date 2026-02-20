@@ -227,8 +227,11 @@ function parseRestoreRemoteArgs(args: string[]): { session?: string; entry?: str
 }
 
 /**
- * Restore extracted content for a session entry
- * Returns the restored entry data and whether the tool call should be consumed
+ * Restore extracted content for a session entry.
+ * Uses custom file locking for the synchronous tool execution path.
+ * TODO(kb-108): Migrate to bus-based restore (send restore.request, await
+ * restore.response) once the API handler is proven stable. The API handler
+ * in app.ts already supports restore.request with proper OpenClawLockAdapter.
  */
 async function restoreRemoteContent(
   agentId: string,
