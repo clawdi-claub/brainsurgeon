@@ -260,27 +260,32 @@
                     <div class="settings-row">
                         <label class="settings-label">Trigger Types</label>
                         <div class="settings-checkboxes" id="settTriggerTypes">
-                            <label><input type="checkbox" value="tool_result_size"> tool_result_size</label>
-                            <label><input type="checkbox" value="tool_result_age"> tool_result_age</label>
-                            <label><input type="checkbox" value="thinking_blocks"> thinking_blocks</label>
-                            <label><input type="checkbox" value="message_count"> message_count</label>
+                            <label><input type="checkbox" value="thinking"> thinking</label>
+                            <label><input type="checkbox" value="tool_result"> tool_result</label>
+                            <label><input type="checkbox" value="assistant"> assistant</label>
+                            <label><input type="checkbox" value="user"> user</label>
+                            <label><input type="checkbox" value="system"> system</label>
                         </div>
                     </div>
                     <div class="settings-row">
-                        <label class="settings-label">Age Threshold (hours)</label>
-                        <input type="number" id="settAgeThreshold" min="0" step="1" class="settings-input">
+                        <label class="settings-label">Keep Recent Messages</label>
+                        <input type="number" id="settKeepRecent" min="0" step="1" class="settings-input" placeholder="3">
                     </div>
                     <div class="settings-row">
-                        <label class="settings-label">Auto-Cron Expression</label>
-                        <input type="text" id="settAutoCron" class="settings-input" placeholder="*/30 * * * *">
+                        <label class="settings-label">Min Value Length (chars)</label>
+                        <input type="number" id="settMinValueLength" min="0" step="100" class="settings-input" placeholder="500">
+                    </div>
+                    <div class="settings-row">
+                        <label class="settings-label">Scan Interval (seconds)</label>
+                        <input type="number" id="settScanInterval" min="5" step="5" class="settings-input" placeholder="30">
                     </div>
                     <div class="settings-row">
                         <label class="settings-label">Retention Duration</label>
-                        <input type="text" id="settRetention" class="settings-input" placeholder="30d">
+                        <input type="text" id="settRetention" class="settings-input" placeholder="24h">
                     </div>
                     <div class="settings-row">
                         <label class="settings-label">Retention Cron</label>
-                        <input type="text" id="settRetentionCron" class="settings-input" placeholder="0 3 * * *">
+                        <input type="text" id="settRetentionCron" class="settings-input" placeholder="0 */6 * * *">
                     </div>
                     <div class="settings-row">
                         <label class="settings-label">Keep restore_remote calls</label>
@@ -290,8 +295,7 @@
                 </div>
             </div>
             <div class="modal-footer" style="display:flex; gap:8px; justify-content:flex-end; padding:12px 20px">
-                <button class="restart-btn" onclick="runCronJob('auto-trigger')" title="Run smart prune now">▶ Run Prune</button>
-                <button class="restart-btn" onclick="runCronJob('retention-cleanup')" title="Run retention cleanup now">▶ Run Cleanup</button>
+                <button class="btn" onclick="closeSettings()">Cancel</button>
                 <button class="restart-btn" onclick="saveSettings()" style="background:var(--accent)">💾 Save</button>
             </div>
         </div>

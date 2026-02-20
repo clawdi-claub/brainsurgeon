@@ -221,6 +221,10 @@ export class FileSystemSessionRepository implements SessionRepository {
       for (const [key, meta] of Object.entries(data)) {
         if (!meta.sessionId) continue;
 
+        // Skip sessions without JSONL files (e.g. cleaned-up subagent sessions)
+        const sessionFile = this.resolvePath(agentId, meta.sessionId);
+        if (!(await this.fileExists(sessionFile))) continue;
+
         // Analyze the JSONL file for accurate stats
         const stats = await this.analyzeJsonl(agentId, meta.sessionId);
 

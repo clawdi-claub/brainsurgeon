@@ -10,7 +10,7 @@ export function createAuthMiddleware(apiKeys: string[]): MiddlewareHandler {
     const providedKey = c.req.header('X-API-Key');
 
     if (!providedKey) {
-      return c.json({ error: `API key required. Pass X-API-Key header.` }, 403);
+      return c.json({ error: 'API key required. Pass X-API-Key header.' }, 401);
     }
 
     if (!apiKeys.includes(providedKey)) {
@@ -19,4 +19,9 @@ export function createAuthMiddleware(apiKeys: string[]): MiddlewareHandler {
 
     await next();
   };
+}
+
+/** Whether API key authentication is configured (at least one key set) */
+export function isAuthEnabled(apiKeys: string[]): boolean {
+  return apiKeys.length > 0;
 }

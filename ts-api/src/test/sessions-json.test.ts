@@ -52,6 +52,10 @@ describe('SessionRepository with OpenClaw file structure', () => {
 
     writeFileSync(join(sessionsDir, 'sessions.json'), JSON.stringify(sessionsJson));
 
+    // Create corresponding JSONL files (listing skips sessions without files)
+    writeFileSync(join(sessionsDir, 'sess-aaa.jsonl'), JSON.stringify({ type: 'message', message: { role: 'user', content: 'hi' } }) + '\n');
+    writeFileSync(join(sessionsDir, 'sess-bbb.jsonl'), JSON.stringify({ type: 'message', message: { role: 'user', content: 'hello' } }) + '\n');
+
     const sessions = await repository.list(agentId);
     expect(sessions).toHaveLength(2);
 

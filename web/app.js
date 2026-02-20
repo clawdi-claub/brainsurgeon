@@ -1760,10 +1760,24 @@ function showApiKeyBanner(show) {
 // Check if API requires authentication
 async function checkApiAuth() {
     try {
+        // Check public endpoint first (not behind auth)
+        const info = await fetch(`${API}/auth-info`);
+        if (info.ok) {
+            const data = await info.json();
+            const apiKeyInput = document.getElementById('apiKeyInput');
+            if (!data.auth_required) {
+                // No auth configured — hide the input entirely
+                if (apiKeyInput) apiKeyInput.style.display = 'none';
+                showApiKeyBanner(false);
+                return true;
+            }
+            if (apiKeyInput) apiKeyInput.style.display = '';
+        }
+
+        // Auth is required — check if current key works
         const r = await apiRequest(`${API}/agents`);
-        if (r.status === 403) {
+        if (r.status === 401 || r.status === 403) {
             showApiKeyBanner(true);
-            // Clear the grid - banner shows the message
             document.getElementById('sessionGrid').innerHTML = '';
             return false;
         } else if (r.ok) {
@@ -1842,8 +1856,9 @@ async function openSettings() {
         if (!r.ok) throw new Error(`${r.status}`);
         const cfg = await r.json();
         document.getElementById('settEnabled').checked = !!cfg.enabled;
-        document.getElementById('settAgeThreshold').value = cfg.age_threshold_hours ?? 24;
-        document.getElementById('settAutoCron').value = cfg.auto_cron ?? '';
+        document.getElementById('settKeepRecent').value = cfg.keep_recent ?? 3;
+        document.getElementById('settMinValueLength').value = cfg.min_value_length ?? 500;
+        document.getElementById('settScanInterval').value = cfg.scan_interval_seconds ?? 30;
         document.getElementById('settRetention').value = cfg.retention ?? '';
         document.getElementById('settRetentionCron').value = cfg.retention_cron ?? '';
         document.getElementById('settKeepRestore').checked = !!cfg.keep_restore_remote_calls;
@@ -1874,8 +1889,9 @@ async function saveSettings() {
     const update = {
         enabled: document.getElementById('settEnabled').checked,
         trigger_types: triggerTypes,
-        age_threshold_hours: Number(document.getElementById('settAgeThreshold').value) || 24,
-        auto_cron: document.getElementById('settAutoCron').value || undefined,
+        keep_recent: Number(document.getElementById('settKeepRecent').value) || 3,
+        min_value_length: Number(document.getElementById('settMinValueLength').value) || 500,
+        scan_interval_seconds: Number(document.getElementById('settScanInterval').value) || 30,
         retention: document.getElementById('settRetention').value || undefined,
         retention_cron: document.getElementById('settRetentionCron').value || undefined,
         keep_restore_remote_calls: document.getElementById('settKeepRestore').checked,

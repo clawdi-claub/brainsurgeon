@@ -268,6 +268,9 @@ app.get('/index.html', c => serveStatic('index.html'));
 app.get('/app.js', c => serveStatic('app.js'));
 app.get('/styles.css', c => serveStatic('styles.css'));
 
+// Public endpoint: auth status (before auth middleware)
+app.get('/api/auth-info', (c) => c.json({ auth_required: API_KEYS.length > 0 }));
+
 // Mount API (with middleware)
 app.route('/api', apiAppWithMiddleware);
 // Also mount at root for direct access (with middleware)
