@@ -1,167 +1,166 @@
 import { describe, it, expect } from 'vitest';
 import {
+  parseDurationMs,
   parseDuration,
   formatDuration,
   isValidDuration,
-  toUnit,
-  ParseError,
 } from './duration-parser.js';
 
-describe('parseDuration', () => {
+describe('parseDurationMs', () => {
+  it('parses milliseconds', () => {
+    expect(parseDurationMs('500ms')).toBe(500);
+    expect(parseDurationMs('0ms')).toBe(0);
+  });
+
+  it('parses seconds', () => {
+    expect(parseDurationMs('30s')).toBe(30_000);
+    expect(parseDurationMs('1s')).toBe(1000);
+  });
+
   it('parses minutes', () => {
-    expect(parseDuration('30m')).toBe(30 * 60 * 1000);
-    expect(parseDuration('60m')).toBe(60 * 60 * 1000);
-    expect(parseDuration('90m')).toBe(90 * 60 * 1000);
+    expect(parseDurationMs('1m')).toBe(60_000);
+    expect(parseDurationMs('30m')).toBe(1_800_000);
+    expect(parseDurationMs('90m')).toBe(5_400_000);
   });
 
   it('parses hours', () => {
-    expect(parseDuration('1h')).toBe(1 * 60 * 60 * 1000);
-    expect(parseDuration('6h')).toBe(6 * 60 * 60 * 1000);
-    expect(parseDuration('24h')).toBe(24 * 60 * 60 * 1000);
+    expect(parseDurationMs('1h')).toBe(3_600_000);
+    expect(parseDurationMs('6h')).toBe(21_600_000);
+    expect(parseDurationMs('24h')).toBe(86_400_000);
   });
 
   it('parses days', () => {
-    expect(parseDuration('1d')).toBe(1 * 24 * 60 * 60 * 1000);
-    expect(parseDuration('7d')).toBe(7 * 24 * 60 * 60 * 1000);
-    expect(parseDuration('30d')).toBe(30 * 24 * 60 * 60 * 1000);
+    expect(parseDurationMs('1d')).toBe(86_400_000);
+    expect(parseDurationMs('7d')).toBe(604_800_000);
+    expect(parseDurationMs('30d')).toBe(2_592_000_000);
+    expect(parseDurationMs('365d')).toBe(31_536_000_000);
   });
 
   it('parses weeks', () => {
-    expect(parseDuration('1w')).toBe(7 * 24 * 60 * 60 * 1000);
-    expect(parseDuration('2w')).toBe(14 * 24 * 60 * 60 * 1000);
-    expect(parseDuration('4w')).toBe(28 * 24 * 60 * 60 * 1000);
+    expect(parseDurationMs('1w')).toBe(604_800_000);
+    expect(parseDurationMs('2w')).toBe(1_209_600_000);
+    expect(parseDurationMs('52w')).toBe(52 * 604_800_000);
   });
 
-  it('handles case insensitivity', () => {
-    expect(parseDuration('30M')).toBe(30 * 60 * 1000);
-    expect(parseDuration('24H')).toBe(24 * 60 * 60 * 1000);
-    expect(parseDuration('1D')).toBe(1 * 24 * 60 * 60 * 1000);
-    expect(parseDuration('1W')).toBe(7 * 24 * 60 * 60 * 1000);
+  it('parses decimals', () => {
+    expect(parseDurationMs('1.5h')).toBe(5_400_000);
+    expect(parseDurationMs('0.5d')).toBe(43_200_000);
   });
 
-  it('handles whitespace', () => {
-    expect(parseDuration(' 30m ')).toBe(30 * 60 * 1000);
-    expect(parseDuration('  1d  ')).toBe(1 * 24 * 60 * 60 * 1000);
+  it('case insensitive', () => {
+    expect(parseDurationMs('30M')).toBe(1_800_000);
+    expect(parseDurationMs('24H')).toBe(86_400_000);
+    expect(parseDurationMs('1D')).toBe(86_400_000);
+    expect(parseDurationMs('1W')).toBe(604_800_000);
   });
 
-  it('throws for invalid formats', () => {
-    expect(() => parseDuration('')).toThrow(ParseError);
-    expect(() => parseDuration('abc')).toThrow(ParseError);
-    expect(() => parseDuration('123')).toThrow(ParseError);
-    expect(() => parseDuration('1x')).toThrow(ParseError);
-    expect(() => parseDuration('h')).toThrow(ParseError);
+  it('trims whitespace', () => {
+    expect(parseDurationMs(' 30m ')).toBe(1_800_000);
+    expect(parseDurationMs('  1d  ')).toBe(86_400_000);
   });
 
-  it('throws for non-strings', () => {
-    expect(() => parseDuration(null as any)).toThrow(ParseError);
-    expect(() => parseDuration(undefined as any)).toThrow(ParseError);
-    expect(() => parseDuration(123 as any)).toThrow(ParseError);
+  it('uses defaultUnit when no unit specified', () => {
+    expect(parseDurationMs('100', { defaultUnit: 'ms' })).toBe(100);
+    expect(parseDurationMs('5', { defaultUnit: 's' })).toBe(5000);
+    expect(parseDurationMs('10', { defaultUnit: 'm' })).toBe(600_000);
   });
 
-  it('throws for durations too short', () => {
-    expect(() => parseDuration('1m')).toThrow(ParseError);
-    expect(() => parseDuration('29m')).toThrow(ParseError);
+  it('defaults to ms when no unit and no defaultUnit', () => {
+    expect(parseDurationMs('1000')).toBe(1000);
   });
 
-  it('throws for durations too long', () => {
-    expect(() => parseDuration('53w')).toThrow(ParseError);
-    expect(() => parseDuration('100w')).toThrow(ParseError);
-    expect(() => parseDuration('365d')).toThrow(ParseError);
+  it('throws on empty', () => {
+    expect(() => parseDurationMs('')).toThrow('invalid duration (empty)');
   });
 
-  it('accepts minimum duration (30m)', () => {
-    expect(parseDuration('30m')).toBe(30 * 60 * 1000);
+  it('throws on invalid format', () => {
+    expect(() => parseDurationMs('abc')).toThrow('invalid duration');
+    expect(() => parseDurationMs('1x')).toThrow('invalid duration');
+    expect(() => parseDurationMs('h')).toThrow('invalid duration');
   });
 
-  it('accepts maximum duration (52w)', () => {
-    expect(parseDuration('52w')).toBe(52 * 7 * 24 * 60 * 60 * 1000);
+  it('throws on null/undefined', () => {
+    expect(() => parseDurationMs(null as any)).toThrow('invalid duration');
+    expect(() => parseDurationMs(undefined as any)).toThrow('invalid duration');
+  });
+
+  it('no min/max limits', () => {
+    // Small durations are valid
+    expect(parseDurationMs('1m')).toBe(60_000);
+    expect(parseDurationMs('1s')).toBe(1000);
+    // Large durations are valid
+    expect(parseDurationMs('365d')).toBe(31_536_000_000);
+    expect(parseDurationMs('100w')).toBe(100 * 604_800_000);
+  });
+});
+
+describe('parseDuration (alias)', () => {
+  it('is the same function as parseDurationMs', () => {
+    expect(parseDuration).toBe(parseDurationMs);
+  });
+
+  it('works identically', () => {
+    expect(parseDuration('6h')).toBe(21_600_000);
+    expect(parseDuration('24h')).toBe(86_400_000);
+    expect(parseDuration('1d')).toBe(86_400_000);
   });
 });
 
 describe('formatDuration', () => {
-  it('formats to minutes', () => {
-    expect(formatDuration(30 * 60 * 1000)).toBe('30m');
-    // 60m is formatted as 1h (more compact representation)
-    expect(formatDuration(60 * 60 * 1000)).toBe('1h');
+  it('formats exact minutes', () => {
+    expect(formatDuration(1_800_000)).toBe('30m');
+    expect(formatDuration(3_600_000)).toBe('1h');
   });
 
-  it('formats to hours', () => {
-    expect(formatDuration(1 * 60 * 60 * 1000)).toBe('1h');
-    expect(formatDuration(6 * 60 * 60 * 1000)).toBe('6h');
-    // 24h is formatted as 1d (more compact representation)
-    expect(formatDuration(24 * 60 * 60 * 1000)).toBe('1d');
+  it('formats exact hours', () => {
+    expect(formatDuration(3_600_000)).toBe('1h');
+    expect(formatDuration(21_600_000)).toBe('6h');
   });
 
-  it('formats to days', () => {
-    expect(formatDuration(1 * 24 * 60 * 60 * 1000)).toBe('1d');
-    // 7d is formatted as 1w (more compact representation)
-    expect(formatDuration(7 * 24 * 60 * 60 * 1000)).toBe('1w');
+  it('formats exact days', () => {
+    expect(formatDuration(86_400_000)).toBe('1d');
   });
 
-  it('formats to weeks', () => {
-    expect(formatDuration(7 * 24 * 60 * 60 * 1000)).toBe('1w');
-    expect(formatDuration(14 * 24 * 60 * 60 * 1000)).toBe('2w');
+  it('formats exact weeks', () => {
+    expect(formatDuration(604_800_000)).toBe('1w');
+    expect(formatDuration(1_209_600_000)).toBe('2w');
   });
 
-  it('throws for negative durations', () => {
-    expect(() => formatDuration(-1)).toThrow(ParseError);
+  it('throws on negative', () => {
+    expect(() => formatDuration(-1)).toThrow('Cannot format negative duration');
   });
 
-  it('handles zero', () => {
-    expect(formatDuration(0)).toBe('1m');
+  it('formats zero as 0ms', () => {
+    expect(formatDuration(0)).toBe('0ms');
+  });
+
+  it('formats sub-second as ms', () => {
+    expect(formatDuration(500)).toBe('500ms');
   });
 });
 
 describe('isValidDuration', () => {
   it('returns true for valid durations', () => {
+    expect(isValidDuration('1m')).toBe(true);
     expect(isValidDuration('30m')).toBe(true);
     expect(isValidDuration('6h')).toBe(true);
     expect(isValidDuration('1d')).toBe(true);
-    expect(isValidDuration('7d')).toBe(true);
     expect(isValidDuration('52w')).toBe(true);
+    expect(isValidDuration('500ms')).toBe(true);
   });
 
   it('returns false for invalid durations', () => {
     expect(isValidDuration('')).toBe(false);
     expect(isValidDuration('abc')).toBe(false);
-    expect(isValidDuration('1m')).toBe(false); // too short
-    expect(isValidDuration('53w')).toBe(false); // too long
+    expect(isValidDuration('1x')).toBe(false);
   });
 });
 
-describe('toUnit', () => {
-  it('converts to minutes', () => {
-    expect(toUnit('1h', 'm')).toBe(60);
-    expect(toUnit('1d', 'm')).toBe(24 * 60);
-  });
-
-  it('converts to hours', () => {
-    expect(toUnit('30m', 'h')).toBe(0.5);
-    expect(toUnit('1d', 'h')).toBe(24);
-  });
-
-  it('converts to days', () => {
-    expect(toUnit('24h', 'd')).toBe(1);
-    expect(toUnit('1w', 'd')).toBe(7);
-  });
-
-  it('converts to weeks', () => {
-    expect(toUnit('7d', 'w')).toBe(1);
-    expect(toUnit('14d', 'w')).toBe(2);
-  });
-
-  it('throws for invalid duration', () => {
-    expect(() => toUnit('invalid', 'h')).toThrow(ParseError);
-  });
-});
-
-describe('retention use cases', () => {
-  it('handles common retention values', () => {
-    // Common values from documentation
-    expect(parseDuration('6h')).toBe(6 * 60 * 60 * 1000);
-    expect(parseDuration('24h')).toBe(24 * 60 * 60 * 1000);
-    expect(parseDuration('1d')).toBe(24 * 60 * 60 * 1000);
-    expect(parseDuration('7d')).toBe(7 * 24 * 60 * 60 * 1000);
-    expect(parseDuration('30d')).toBe(30 * 24 * 60 * 60 * 1000);
+describe('retention config integration', () => {
+  it('parses typical retention values', () => {
+    expect(parseDurationMs('6h')).toBe(21_600_000);
+    expect(parseDurationMs('24h')).toBe(86_400_000);
+    expect(parseDurationMs('7d')).toBe(604_800_000);
+    expect(parseDurationMs('30d')).toBe(2_592_000_000);
   });
 });
