@@ -57,14 +57,14 @@ export class RestoreService {
       // Load the session
       const session = await this.sessionRepo.load(agentId, sessionId);
 
-      // Find the entry with [[extracted]] placeholders
+      // Find the entry with [[extracted]] placeholders (OpenClaw uses 'id', we check both)
       const entryIndex = session.entries.findIndex(
-        (e: SessionEntry) => e.__id === entryId && hasExtractedPlaceholders(e)
+        (e: SessionEntry) => (e.__id === entryId || e.id === entryId) && hasExtractedPlaceholders(e)
       );
 
       if (entryIndex === -1) {
         // Check if entry exists but isn't extracted
-        const entryExists = session.entries.findIndex((e: SessionEntry) => e.__id === entryId);
+        const entryExists = session.entries.findIndex((e: SessionEntry) => e.__id === entryId || e.id === entryId);
         if (entryExists !== -1) {
           return {
             success: false,
@@ -188,7 +188,7 @@ export class RestoreService {
       const session = await this.sessionRepo.load(agentId, sessionId);
 
       const entryIndex = session.entries.findIndex(
-        (e: SessionEntry) => e.__id === toolCallEntryId
+        (e: SessionEntry) => e.__id === toolCallEntryId || e.id === toolCallEntryId
       );
 
       if (entryIndex === -1) {

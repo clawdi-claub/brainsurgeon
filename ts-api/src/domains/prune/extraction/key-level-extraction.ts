@@ -26,9 +26,9 @@ export interface ExtractionResult {
 }
 
 /**
- * Keys that are never extracted (metadata keys)
+ * Keys that are never extracted (metadata keys and identification)
  */
-const METADATA_KEYS = ['__id', '__ts', '__meta', '__hash'];
+const METADATA_KEYS = ['__id', 'id', '__ts', '__meta', '__hash', 'type', 'customType', 'timestamp'];
 
 /**
  * Keys that should always be extracted for thinking entries
@@ -143,21 +143,24 @@ function determineKeysToExtract(
   entry: SessionEntry,
   triggerType: string
 ): string[] {
-  const allKeys = Object.keys(entry).filter(k => !k.startsWith('__'));
+  // Never extract identification/metadata keys
+  const NEVER_EXTRACT = ['id', '__id', 'type', 'customType', 'timestamp', 'role'];
+  
+  const allKeys = Object.keys(entry).filter(k => !k.startsWith('__') && !NEVER_EXTRACT.includes(k));
 
   switch (triggerType) {
     case 'thinking':
       // Extract thinking-specific keys first, then any remaining content keys
       return [
         ...THINKING_EXTRACT_KEYS,
-        ...allKeys.filter(k => !THINKING_EXTRACT_KEYS.includes(k) && k !== 'type' && k !== 'customType')
+        ...allKeys.filter(k => !THINKING_EXTRACT_KEYS.includes(k))
       ];
     
     case 'tool_result':
       // Extract tool result keys
       return [
         ...TOOL_RESULT_EXTRACT_KEYS,
-        ...allKeys.filter(k => !TOOL_RESULT_EXTRACT_KEYS.includes(k) && k !== 'type')
+        ...allKeys.filter(k => !TOOL_RESULT_EXTRACT_KEYS.includes(k))
       ];
     
     case 'assistant':
@@ -166,7 +169,7 @@ function determineKeysToExtract(
       // Extract content/message keys for role-based types
       return allKeys.filter(k => 
         ['content', 'message', 'text', 'response'].includes(k) ||
-        !['type', 'role', 'customType', 'timestamp'].includes(k)
+        !['role'].includes(k)
       );
     
     default:

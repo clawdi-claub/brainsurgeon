@@ -12,7 +12,9 @@ import type { TriggerType } from '../../../domains/config/model/config.js';
  * Session entry from OpenClaw JSONL
  */
 export interface SessionEntry {
+  /** Entry ID (OpenClaw uses 'id', BrainSurgeon uses '__id' internally) */
   __id?: string;
+  id?: string;
   type?: string;
   customType?: string;
   message?: {
@@ -98,8 +100,9 @@ export function detectTrigger(
     };
   }
 
-  // Check 2: Has __id field
-  const hasId = !!entry.__id;
+  // Check 2: Has __id or id field (OpenClaw uses 'id', we normalize to __id internally)
+  const entryId = entry.__id || entry.id;
+  const hasId = !!entryId;
   if (!hasId) {
     return {
       matched: false,

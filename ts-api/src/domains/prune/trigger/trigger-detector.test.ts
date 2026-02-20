@@ -54,18 +54,32 @@ describe('detectTrigger (position-based)', () => {
     expect(result.shouldExtract).toBe(true);
   });
 
-  it('requires __id field', () => {
+  it('accepts entries with id field (OpenClaw format)', () => {
     const entry: SessionEntry = {
+      id: 'ent_022',  // OpenClaw uses 'id' not '__id'
       customType: 'thinking',
       thinking: 'a'.repeat(600),
     };
 
     const result = detectTrigger(entry, baseConfig, 5);
 
-    expect(result.matched).toBe(false);
-    expect(result.hasId).toBe(false);
-    expect(result.shouldExtract).toBe(false);
-    expect(result.skipReason).toBe('no_entry_id');
+    expect(result.matched).toBe(true);
+    expect(result.hasId).toBe(true);
+    expect(result.shouldExtract).toBe(true);
+  });
+
+  it('prefers __id over id when both present', () => {
+    const entry: SessionEntry = {
+      __id: 'preferred_id',
+      id: 'secondary_id',
+      customType: 'thinking',
+      thinking: 'a'.repeat(600),
+    };
+
+    const result = detectTrigger(entry, baseConfig, 5);
+
+    expect(result.matched).toBe(true);
+    expect(result.hasId).toBe(true);
   });
 
   it('rejects entries with [[extracted]] placeholders', () => {

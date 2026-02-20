@@ -60,8 +60,9 @@ export class SmartPruningExecutor implements PruningExecutor {
           const entry = session.entries[i];
           const positionFromEnd = session.entries.length - 1 - i;
 
-          // Skip entries without __id (can't be extracted)
-          if (!entry.__id) continue;
+          // Skip entries without __id or id (can't be extracted)
+          const entryId = entry.__id || entry.id;
+          if (!entryId) continue;
 
           // Skip already-extracted entries
           if (hasExtractedPlaceholders(entry)) continue;
@@ -83,7 +84,7 @@ export class SmartPruningExecutor implements PruningExecutor {
           const { sizeBytes } = await this.storage.store(
             item.agentId,
             item.id,
-            entry.__id as string,
+            entryId as string,
             result.extractedData,
           );
 
@@ -96,7 +97,7 @@ export class SmartPruningExecutor implements PruningExecutor {
           log.debug({
             agentId: item.agentId,
             sessionId: item.id,
-            entryId: entry.__id,
+            entryId: entryId,
             triggerType: match.triggerType,
             keys: result.extractedKeys,
             sizesBytes: result.sizesBytes,
