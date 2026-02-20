@@ -72,6 +72,7 @@ export class SmartPruningExecutor implements PruningExecutor {
             trigger_types: config.trigger_types,
             keep_recent: config.keep_recent,
             min_value_length: config.min_value_length,
+            keep_after_restore_seconds: config.keep_after_restore_seconds,
           }, positionFromEnd);
 
           if (!match.shouldExtract || !match.triggerType) continue;

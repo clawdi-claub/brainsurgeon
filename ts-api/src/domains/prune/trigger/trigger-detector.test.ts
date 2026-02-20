@@ -7,6 +7,7 @@ describe('detectTrigger (position-based)', () => {
     trigger_types: ['thinking', 'tool_result'],
     keep_recent: 3,
     min_value_length: 500,
+    keep_after_restore_seconds: 600, // 10 minutes default
   };
 
   it('returns no match when disabled', () => {
@@ -238,6 +239,22 @@ describe('detectTrigger (position-based)', () => {
       expect(result.shouldExtract).toBe(true);
     });
 
+    it('forces extraction when _extractable: true even with small values', () => {
+      const entry: SessionEntry = {
+        __id: 'ent_012b',
+        type: 'message',
+        message: { role: 'user' },
+        content: 'tiny', // Way below min_value_length
+        _extractable: true,
+      };
+
+      const result = detectTrigger(entry, baseConfig, 5);
+
+      expect(result.matched).toBe(true);
+      expect(result.shouldExtract).toBe(true);
+      // Spec: "_extractable: true → extract even if wrong type or too short"
+    });
+
     it('prevents extraction when _extractable: false', () => {
       const entry: SessionEntry = {
         __id: 'ent_013',
@@ -283,6 +300,88 @@ describe('detectTrigger (position-based)', () => {
 
       expect(result.matched).toBe(true);
       expect(result.shouldExtract).toBe(true);
+    });
+  });
+
+  describe('re-extraction protection (_restored time-based)', () => {
+    it('prevents extraction of recently restored entries', () => {
+      const entry: SessionEntry = {
+        __id: 'ent_030',
+        customType: 'thinking',
+        thinking: 'a'.repeat(600),
+        _restored: new Date(Date.now() - 5 * 60 * 1000).toISOString(), // 5 minutes ago
+      };
+
+      // With keep_after_restore_seconds=600 (10 min), 5 min ago is still protected
+      const result = detectTrigger(entry, baseConfig, 5);
+
+      expect(result.shouldExtract).toBe(false);
+      expect(result.skipReason).toContain('recently_restored');
+      expect(result.skipReason).toContain('remaining');
+    });
+
+    it('allows extraction after protection expires', () => {
+      const entry: SessionEntry = {
+        __id: 'ent_031',
+        customType: 'thinking',
+        thinking: 'a'.repeat(600),
+        _restored: new Date(Date.now() - 15 * 60 * 1000).toISOString(), // 15 minutes ago
+      };
+
+      // With keep_after_restore_seconds=600 (10 min), 15 min ago is past protection
+      const result = detectTrigger(entry, baseConfig, 5);
+
+      expect(result.shouldExtract).toBe(true);
+    });
+
+    it('protection uses keep_after_restore_seconds from config', () => {
+      const entry: SessionEntry = {
+        __id: 'ent_032',
+        customType: 'thinking',
+        thinking: 'a'.repeat(600),
+        _restored: new Date(Date.now() - 20 * 1000).toISOString(), // 20 seconds ago
+      };
+
+      // With keep_after_restore_seconds=30 (30 sec), 20 sec ago is still protected
+      const configShort: TriggerConfig = { ...baseConfig, keep_after_restore_seconds: 30 };
+      const result1 = detectTrigger(entry, configShort, 5);
+      expect(result1.shouldExtract).toBe(false);
+
+      // With keep_after_restore_seconds=10 (10 sec), 20 sec ago is past protection
+      const configVeryShort: TriggerConfig = { ...baseConfig, keep_after_restore_seconds: 10 };
+      const result2 = detectTrigger(entry, configVeryShort, 5);
+      expect(result2.shouldExtract).toBe(true);
+    });
+
+    it('_extractable: true overrides time-based restoration protection', () => {
+      const entry: SessionEntry = {
+        __id: 'ent_033',
+        customType: 'thinking',
+        thinking: 'a'.repeat(600),
+        _extractable: true,
+        _restored: new Date(Date.now() - 5 * 1000).toISOString(), // 5 seconds ago
+      };
+
+      // _extractable: true should force extraction even if recently restored
+      const result = detectTrigger(entry, baseConfig, 5);
+
+      expect(result.shouldExtract).toBe(true);
+    });
+
+    it('_extractable: false overrides restoration protection (still prevents)', () => {
+      const entry: SessionEntry = {
+        __id: 'ent_034',
+        customType: 'thinking',
+        thinking: 'a'.repeat(600),
+        _extractable: false,
+        _restored: new Date(Date.now() - 15 * 60 * 1000).toISOString(), // 15 min ago (past protection)
+      };
+
+      // Both _extractable: false AND past protection time → _extractable wins
+      const result = detectTrigger(entry, baseConfig, 5);
+
+      expect(result.shouldExtract).toBe(false);
+      expect(result.skipReason).toBe('_extractable_false');
     });
   });
 

@@ -33,6 +33,8 @@ export interface SessionEntry {
   data?: any;
   /** Per-message extraction override */
   _extractable?: boolean | number;
+  /** ISO timestamp when entry was restored from extraction (used for re-extraction protection) */
+  _restored?: string;
   [key: string]: any;
 }
 
@@ -64,6 +66,8 @@ export interface TriggerConfig {
   trigger_types: TriggerType[];
   keep_recent: number;
   min_value_length: number;
+  /** How long to protect restored entries from re-extraction (seconds) */
+  keep_after_restore_seconds: number;
 }
 
 /**
@@ -74,8 +78,9 @@ export interface TriggerConfig {
  * 2. Entry has __id field (required for extraction)
  * 3. Entry doesn't already have [[extracted]] placeholders
  * 4. Entry type matches one of trigger_types OR _extractable override
- * 5. Entry position >= keep_recent (old enough to extract)
- * 6. Entry has content values > min_value_length (worth extracting)
+ * 5. Entry not recently restored (time-based re-extraction protection)
+ * 6. Entry position >= keep_recent (old enough to extract)
+ * 7. Entry has content values > min_value_length (worth extracting)
  * 
  * @param entry - Session entry from JSONL
  * @param config - Trigger configuration
@@ -132,16 +137,15 @@ export function detectTrigger(
   const extractableOverride = getExtractableOverride(entry, positionFromEnd, config.keep_recent);
   
   if (extractableOverride === 'force') {
-    // Force extraction regardless of type
-    const hasLargeValues = checkValueSizes(entry, config.min_value_length);
+    // Force extraction regardless of type, position, and value size
+    // Spec: _extractable: true → "extract even if wrong type or too short"
     return {
       matched: true,
       triggerType: 'assistant', // Default when forced
       hasId: true,
       positionFromEnd,
       meetsPositionThreshold: true,
-      shouldExtract: hasLargeValues.hasLargeValues,
-      skipReason: hasLargeValues.hasLargeValues ? undefined : 'values_too_small',
+      shouldExtract: true,
     };
   }
   
@@ -157,7 +161,27 @@ export function detectTrigger(
     };
   }
 
-  // Check 5: Type detection
+  // Check 5: Re-extraction protection for restored entries
+  // Spec: "Protects restored value from re-extraction for keep_after_restore_seconds"
+  if (entry._restored) {
+    const restoredAt = new Date(entry._restored).getTime();
+    const protectedUntil = restoredAt + (config.keep_after_restore_seconds * 1000);
+    if (Date.now() < protectedUntil) {
+      const remainingSeconds = Math.ceil((protectedUntil - Date.now()) / 1000);
+      return {
+        matched: false,
+        triggerType: null,
+        hasId: true,
+        positionFromEnd,
+        meetsPositionThreshold: false,
+        shouldExtract: false,
+        skipReason: `recently_restored (${remainingSeconds}s remaining)`,
+      };
+    }
+    // Protection expired — continue with normal extraction checks
+  }
+
+  // Check 6: Type detection
   const detectedType = detectEntryType(entry);
   const matched = detectedType !== null && config.trigger_types.includes(detectedType);
   
@@ -173,7 +197,7 @@ export function detectTrigger(
     };
   }
 
-  // Check 6: Position threshold (keep_recent)
+  // Check 7: Position threshold (keep_recent)
   // Position 0 = most recent, position keep_recent and beyond = extract
   const meetsPositionThreshold = positionFromEnd >= config.keep_recent;
   
@@ -189,7 +213,7 @@ export function detectTrigger(
     };
   }
 
-  // Check 7: Value sizes (only extract if there's content worth extracting)
+  // Check 8: Value sizes (only extract if there's content worth extracting)
   const valueSizeCheck = checkValueSizes(entry, config.min_value_length);
   
   if (!valueSizeCheck.hasLargeValues) {
@@ -400,7 +424,7 @@ function inferTypeFromContent(entry: SessionEntry): TriggerType | null {
 }
 
 /**
- * Check if an entry has any [[extracted]] placeholders
+ * Check if an entry has any [[extracted-${entryId}]] placeholders
  * Used to prevent double-extraction
  * 
  * @param entry - Entry to check
@@ -408,5 +432,5 @@ function inferTypeFromContent(entry: SessionEntry): TriggerType | null {
  */
 export function hasExtractedPlaceholders(entry: SessionEntry): boolean {
   const json = JSON.stringify(entry);
-  return json.includes('[[extracted]]');
+  return json.includes('[[extracted-');
 }

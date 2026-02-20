@@ -64,6 +64,7 @@ export class FileSystemConfigRepository implements ConfigRepository {
       trigger_types: partial.trigger_types ?? ['thinking', 'tool_result'],
       keep_recent: partial.keep_recent ?? 3,
       min_value_length: partial.min_value_length ?? 500,
+      keep_after_restore_seconds: partial.keep_after_restore_seconds ?? 600, // 10 min default
       scan_interval_seconds: partial.scan_interval_seconds ?? 30,
       auto_cron: partial.auto_cron ?? '*/2 * * * *',
       last_run_at: partial.last_run_at ?? null,

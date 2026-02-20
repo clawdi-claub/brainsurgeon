@@ -3,6 +3,7 @@ import type { SessionService } from '../services/session-service.js';
 import type { PruneService } from '../services/prune-service.js';
 import type { ExtractionStorage } from '../../prune/extraction/extraction-storage.js';
 import { RestoreService } from '../../prune/restore/restore-service.js';
+import type { BrainSurgeonConfigService } from '../../config/index.js';
 import { moveExtractedToTrash } from '../../prune/extraction/extraction-trash.js';
 import { mapSessionListItem, mapSessionDetail } from './response-mapper.js';
 import { generateSessionSummary } from '../services/summary-service.js';
@@ -17,6 +18,7 @@ export function createSessionRoutes(
   pruneService: PruneService,
   extractionStorage?: ExtractionStorage,
   restoreService?: RestoreService,
+  configService?: BrainSurgeonConfigService,
 ): Hono {
   const app = new Hono();
 
@@ -237,10 +239,12 @@ export function createSessionRoutes(
   });
 
   // POST /sessions/:agent/:id/entries/:entryId/restore — restore extracted content
+  // Optional body: { toolCallEntryId?: string } — if provided, redacts the restore_remote tool call
   app.post('/:agent/:id/entries/:entryId/restore', async (c) => {
     const agentId = sanitizeId(c.req.param('agent'), 'agent');
     const sessionId = sanitizeId(c.req.param('id'), 'session_id');
     const entryId = sanitizeId(c.req.param('entryId'), 'entry');
+    const body = await c.req.json().catch(() => ({}));
 
     if (!restoreService) {
       return c.json({ error: 'Restore service not configured' }, 501);
@@ -251,6 +255,7 @@ export function createSessionRoutes(
         agentId,
         sessionId,
         entryId,
+        keys: body.keys,
       });
 
       if (!result.success) {
@@ -262,10 +267,30 @@ export function createSessionRoutes(
         }, 400);
       }
 
+      // Redact restore_remote tool call if configured
+      // Spec: "Redacts the restore_remote tool call to remote_restore placeholder"
+      // Redaction enabled by default (keep_restore_remote_calls: false)
+      let redacted = false;
+      if (body.toolCallEntryId) {
+        let shouldRedact = true; // default: redact
+        if (configService) {
+          try {
+            const config = await configService.getFullConfig();
+            shouldRedact = !config.keep_restore_remote_calls;
+          } catch {
+            // Config unavailable — default to redacting
+          }
+        }
+        if (shouldRedact) {
+          redacted = await restoreService.redactRestoreCall(agentId, sessionId, body.toolCallEntryId);
+        }
+      }
+
       auditLog('restore', agentId, sessionId, c.req.header('X-API-Key'), {
         entryId,
         keysRestored: result.keysRestored,
         totalSize: result.totalSize,
+        redacted,
       });
 
       return c.json({
@@ -276,6 +301,7 @@ export function createSessionRoutes(
         keysRestored: result.keysRestored,
         sizesBytes: result.sizesBytes,
         totalSize: result.totalSize,
+        redacted,
       });
     } catch (error) {
       log.error({ err: error, agentId, sessionId, entryId }, 'failed to restore entry');

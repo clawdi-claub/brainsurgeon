@@ -151,6 +151,17 @@ export class BrainSurgeonConfigService implements ConfigService {
         typeof update.keep_restore_remote_calls !== 'boolean') {
       throw new ValidationError('keep_restore_remote_calls must be a boolean');
     }
+    
+    // Validate keep_after_restore_seconds
+    if (update.keep_after_restore_seconds !== undefined) {
+      if (typeof update.keep_after_restore_seconds !== 'number' || 
+          update.keep_after_restore_seconds < 0 || 
+          update.keep_after_restore_seconds > 86400) {
+        throw new ValidationError(
+          'keep_after_restore_seconds must be a number between 0 and 86400 (0 to 24 hours)'
+        );
+      }
+    }
   }
 
   /**
@@ -189,6 +200,7 @@ export class BrainSurgeonConfigService implements ConfigService {
       retention: config.retention,
       retention_cron: config.retention_cron,
       keep_restore_remote_calls: config.keep_restore_remote_calls,
+      keep_after_restore_seconds: config.keep_after_restore_seconds,
     };
   }
 }

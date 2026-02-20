@@ -38,6 +38,9 @@ export interface SmartPruningConfig {
 
   /** Debug: keep restore_remote tool calls in session? */
   keep_restore_remote_calls: boolean;
+
+  /** How long to protect restored entries from re-extraction (seconds). Default: 600 (10 min) */
+  keep_after_restore_seconds: number;
 }
 
 export const DEFAULT_CONFIG: SmartPruningConfig = {
@@ -52,6 +55,7 @@ export const DEFAULT_CONFIG: SmartPruningConfig = {
   retention_cron: '0 */6 * * *',
   last_retention_run_at: null,
   keep_restore_remote_calls: false,
+  keep_after_restore_seconds: 600, // 10 minutes default
 };
 
 /** Valid trigger types for validation */
@@ -70,6 +74,7 @@ export interface ConfigResponse {
   retention: string;
   retention_cron: string;
   keep_restore_remote_calls: boolean;
+  keep_after_restore_seconds: number;
 }
 
 /** Config update request */
@@ -83,4 +88,5 @@ export interface ConfigUpdateRequest {
   retention?: string;
   retention_cron?: string;
   keep_restore_remote_calls?: boolean;
+  keep_after_restore_seconds?: number;
 }

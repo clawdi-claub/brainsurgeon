@@ -298,20 +298,25 @@ async function restoreRemoteContent(
       
       // Restore the specified keys
       const restoredKeys: string[] = [];
+      const entryId = targetEntry.__id || targetEntry.id || 'unknown';
+      const expectedPlaceholder = `[[extracted-${entryId}]]`;
       
       function restoreInObject(obj: any, pathPrefix: string[] = []): void {
         for (const key of Object.keys(obj)) {
           const fullPath = [...pathPrefix, key];
           const fullKey = fullPath.join('.');
           
-          if (obj[key] === '[[extracted]]') {
+          const value = obj[key];
+          // Check for both old [[extracted]] and new [[extracted-${entryId}]] formats
+          if (value === '[[extracted]]' || value === expectedPlaceholder ||
+              (typeof value === 'string' && value.startsWith('[[extracted-'))) {
             const extractedValue = getNestedValue(extractedData, fullPath);
             if (extractedValue !== undefined) {
               obj[key] = extractedValue;
               restoredKeys.push(fullKey);
             }
-          } else if (typeof obj[key] === 'object' && obj[key] !== null) {
-            restoreInObject(obj[key], fullPath);
+          } else if (typeof value === 'object' && value !== null) {
+            restoreInObject(value, fullPath);
           }
         }
       }
@@ -328,15 +333,19 @@ async function restoreRemoteContent(
       // Perform restoration
       restoreInObject(targetEntry);
       
-      // Mark entry as restored
-      targetEntry.__restored_at = new Date().toISOString();
+      // Check if this is a re-restore (entry already has _restored timestamp)
+      const isReRestore = !!targetEntry._restored;
+      const previousRestoredAt = targetEntry._restored;
+      
+      // Mark entry as restored with _restored timestamp (used for time-based re-extraction protection)
+      targetEntry._restored = new Date().toISOString();
       targetEntry.__restored_keys = restoredKeys;
       
       // Write updated session
       const updatedContent = entries.map(e => JSON.stringify(e)).join('\n') + '\n';
       await fs.writeFile(sessionFile, updatedContent, 'utf-8');
       
-      api.log.info(`Restored ${restoredKeys.length} keys for entry ${entryId} in session ${sessionId}`);
+      api.log.info(`Restored ${restoredKeys.length} keys for entry ${entryId} in session ${sessionId}${isReRestore ? ' (re-restore)' : ''}`);
       
       // Notify via message bus
       bus.publish('entry_restored', {
@@ -345,9 +354,16 @@ async function restoreRemoteContent(
         entryId,
         keysRestored: restoredKeys,
         timestamp: new Date().toISOString(),
+        isReRestore,
+        previousRestoredAt,
       });
       
-      return { success: true, restoredKeys };
+      const result: any = { success: true, restoredKeys };
+      if (isReRestore && previousRestoredAt) {
+        result.previousRestoredAt = previousRestoredAt;
+        result.suggestion = 'This entry was previously restored. If you need to keep this content long-term, consider setting _extractable: false.';
+      }
+      return result;
     } finally {
       await releaseLock(lockFile);
       api.log.debug('lock released');

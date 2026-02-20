@@ -87,7 +87,7 @@ const apiApp = new Hono();
 apiApp.get('/health', (c) => c.json({ status: 'ok', version: '2.0.0' }));
 
 // Mount session routes
-const sessionRoutes = createSessionRoutes(sessionService, pruneService, extractionStorage, restoreService);
+const sessionRoutes = createSessionRoutes(sessionService, pruneService, extractionStorage, restoreService, configService);
 apiApp.route('/sessions', sessionRoutes);
 
 // Mount trash routes

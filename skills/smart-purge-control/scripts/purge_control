@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+"""
+purge_control - Control BrainSurgeon's smart extraction system
+
+Actions:
+  get_context     - Show current session context stats and extraction candidates
+  restore         - Restore extracted content by entry ID
+  set_extractable - Mark entries as extractable/non-extractable
+
+Usage:
+  purge_control get_context [--agent AGENT] [--session SESSION]
+  purge_control restore <entry-id> [--agent AGENT] [--session SESSION] [--keys KEY1,KEY2]
+  purge_control set_extractable <entry-id> {true|false|N} [--agent AGENT] [--session SESSION]
+"""
+
+import argparse
+import json
+import os
+import sys
+import urllib.request
+from typing import Optional
+
+DEFAULT_GATEWAY = "http://localhost:3000"
+
+def get_gateway_url() -> str:
+    return os.environ.get("OPENCLAW_GATEWAY", DEFAULT_GATEWAY)
+
+def api_request(method: str, path: str, data: Optional[dict] = None) -> dict:
+    url = f"{get_gateway_url()}{path}"
+    headers = {"Content-Type": "application/json"}
+    
+    if data:
+        body = json.dumps(data).encode()
+    else:
+        body = None
+    
+    req = urllib.request.Request(url, data=body, headers=headers, method=method)
+    
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode()
+        try:
+            error_data = json.loads(error_body)
+            print(f"Error: {error_data.get('error', error_body)}", file=sys.stderr)
+        except:
+            print(f"Error: {error_body}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+def action_get_context(agent: Optional[str], session: Optional[str]):
+    """Get current context stats and extraction candidates."""
+    # Get session status from gateway
+    path = "/api/status"
+    if agent and session:
+        path = f"/api/sessions/{agent}/{session}/status"
+    
+    result = api_request("GET", path)
+    print(json.dumps(result, indent=2))
+
+def action_restore(entry_id: str, agent: Optional[str], session: Optional[str], keys: Optional[list]):
+    """Restore extracted content by entry ID."""
+    if not agent or not session:
+        print("Error: --agent and --session required for restore", file=sys.stderr)
+        sys.exit(1)
+    
+    path = f"/api/sessions/{agent}/{session}/entries/{entry_id}/restore"
+    data = {}
+    if keys:
+        data["keys"] = keys
+    
+    result = api_request("POST", path, data if data else None)
+    print(f"Restored entry {entry_id}")
+    if result:
+        print(json.dumps(result, indent=2))
+
+def action_set_extractable(entry_id: str, value: str, agent: Optional[str], session: Optional[str]):
+    """Mark entry as extractable/non-extractable."""
+    if not agent or not session:
+        print("Error: --agent and --session required for set_extractable", file=sys.stderr)
+        sys.exit(1)
+    
+    # Parse value: true, false, or integer
+    if value.lower() == "true":
+        extractable = True
+    elif value.lower() == "false":
+        extractable = False
+    else:
+        try:
+            extractable = int(value)
+        except ValueError:
+            print(f"Error: value must be 'true', 'false', or an integer, got: {value}", file=sys.stderr)
+            sys.exit(1)
+    
+    path = f"/api/sessions/{agent}/{session}/entries/{entry_id}/extractable"
+    data = {"_extractable": extractable}
+    
+    result = api_request("PUT", path, data)
+    print(f"Set _extractable={extractable} for entry {entry_id}")
+    if result:
+        print(json.dumps(result, indent=2))
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Control BrainSurgeon's smart extraction system",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  purge_control get_context
+  purge_control restore msg-abc123 --agent crix-claub --session direct:123
+  purge_control set_extractable msg-abc123 false --agent crix-claub --session direct:123
+        """
+    )
+    
+    parser.add_argument("--agent", help="Agent ID")
+    parser.add_argument("--session", help="Session ID")
+    
+    subparsers = parser.add_subparsers(dest="action", help="Action to perform")
+    
+    # get_context
+    subparsers.add_parser("get_context", help="Get context stats and extraction candidates")
+    
+    # restore
+    restore_parser = subparsers.add_parser("restore", help="Restore extracted content")
+    restore_parser.add_argument("entry_id", help="Entry ID to restore")
+    restore_parser.add_argument("--keys", help="Comma-separated keys to restore (default: all)")
+    
+    # set_extractable
+    extractable_parser = subparsers.add_parser("set_extractable", help="Mark entry as extractable/non-extractable")
+    extractable_parser.add_argument("entry_id", help="Entry ID to modify")
+    extractable_parser.add_argument("value", help="Value: 'true', 'false', or integer (keep window)")
+    
+    args = parser.parse_args()
+    
+    if not args.action:
+        parser.print_help()
+        sys.exit(1)
+    
+    if args.action == "get_context":
+        action_get_context(args.agent, args.session)
+    elif args.action == "restore":
+        keys = args.keys.split(",") if args.keys else None
+        action_restore(args.entry_id, args.agent, args.session, keys)
+    elif args.action == "set_extractable":
+        action_set_extractable(args.entry_id, args.value, args.agent, args.session)
+
+if __name__ == "__main__":
+    main()

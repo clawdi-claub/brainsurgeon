@@ -62,6 +62,10 @@ export function extractEntryKeys(
     const sizesBytes: Record<string, number> = {};
     const modifiedEntry: SessionEntry = { ...entry };
 
+    // Get entry ID for placeholder format [[extracted-${entryId}]]
+    const entryId = entry.__id || entry.id || 'unknown';
+    const placeholder = `[[extracted-${entryId}]]`;
+
     // Determine which keys to extract based on trigger type
     const keysToExtract = determineKeysToExtract(entry, triggerType);
 
@@ -86,7 +90,7 @@ export function extractEntryKeys(
       sizesBytes[key] = sizeBytes;
 
       // Replace with placeholder in modified entry
-      modifiedEntry[key] = '[[extracted]]';
+      modifiedEntry[key] = placeholder;
     }
 
     // Handle nested data structures
@@ -94,7 +98,8 @@ export function extractEntryKeys(
       const nestedResult = extractNestedData(
         entry.data, 
         triggerType,
-        'data'
+        'data',
+        placeholder
       );
       
       if (nestedResult.extractedKeys.length > 0) {
@@ -184,7 +189,8 @@ function determineKeysToExtract(
 function extractNestedData(
   data: Record<string, any>,
   triggerType: string,
-  prefix: string
+  prefix: string,
+  placeholder: string
 ): {
   extractedKeys: string[];
   extractedData: Record<string, any>;
@@ -198,7 +204,7 @@ function extractNestedData(
 
   // Determine which nested keys to extract
   let keysToCheck: string[] = [];
-  
+
   switch (triggerType) {
     case 'thinking':
       keysToCheck = THINKING_EXTRACT_KEYS.filter(k => k in data);
@@ -207,7 +213,7 @@ function extractNestedData(
       keysToCheck = TOOL_RESULT_EXTRACT_KEYS.filter(k => k in data);
       break;
     default:
-      keysToCheck = Object.keys(data).filter(k => 
+      keysToCheck = Object.keys(data).filter(k =>
         typeof data[k] === 'string' && data[k].length > 100
       );
   }
@@ -218,7 +224,7 @@ function extractNestedData(
       extractedData[key] = data[key];
       extractedKeys.push(`${prefix}.${key}`);
       sizesBytes[`${prefix}.${key}`] = sizeBytes;
-      modifiedData[key] = '[[extracted]]';
+      modifiedData[key] = placeholder;
     }
   }
 
@@ -251,21 +257,33 @@ export function createPlaceholderEntry(entry: SessionEntry): SessionEntry {
 }
 
 /**
- * Check if an entry has any [[extracted]] placeholders
- * Used to prevent double-extraction
+ * Check if an entry has any [[extracted-${entryId}]] placeholders
+ * Used to prevent double-extraction and detect extractable entries
  * 
  * @param entry - Entry to check
  * @returns true if already has extracted placeholders
  */
 export function hasExtractedPlaceholders(entry: SessionEntry): boolean {
   const json = JSON.stringify(entry);
-  return json.includes('[[extracted]]');
+  return json.includes('[[extracted-');
+}
+
+/**
+ * Extract the entry ID from an extracted placeholder value
+ * Placeholder format: [[extracted-${entryId}]]
+ * 
+ * @param value - Placeholder string
+ * @returns entry ID or null if not a valid placeholder
+ */
+export function extractEntryIdFromPlaceholder(value: string): string | null {
+  const match = value.match(/\[\[extracted-(.+)\]\]/);
+  return match ? match[1] : null;
 }
 
 /**
  * Restore extracted content back into an entry
  * 
- * @param placeholderEntry - Entry with [[extracted]] placeholders
+ * @param placeholderEntry - Entry with [[extracted-${entryId}]] placeholders
  * @param extractedData - Data from extracted file
  * @returns Restored entry with actual values
  */
@@ -278,9 +296,10 @@ export function restoreExtractedContent(
   // Remove __meta from extracted data (it's metadata, not content)
   const { __meta, ...contentData } = extractedData;
 
-  // Replace [[extracted]] placeholders with actual values
+  // Replace [[extracted-${entryId}]] placeholders with actual values
   for (const key of Object.keys(restored)) {
-    if (restored[key] === '[[extracted]]') {
+    const value = restored[key];
+    if (typeof value === 'string' && value.startsWith('[[extracted-')) {
       if (key in contentData) {
         restored[key] = contentData[key];
       }
@@ -305,7 +324,8 @@ function restoreNestedContent(
   const restored = { ...placeholderData };
 
   for (const key of Object.keys(restored)) {
-    if (restored[key] === '[[extracted]]') {
+    const value = restored[key];
+    if (typeof value === 'string' && value.startsWith('[[extracted-')) {
       if (key in extractedData) {
         restored[key] = extractedData[key];
       }

@@ -25,6 +25,10 @@ export interface RestoreResult {
   sizesBytes: Record<string, number>;
   totalSize: number;
   redacted: boolean;
+  /** If entry was previously restored, shows when */
+  previousRestoredAt?: string;
+  /** Suggestion for agent if re-restoring */
+  suggestion?: string;
 }
 
 export interface RestoreRequest {
@@ -66,12 +70,27 @@ export class RestoreService {
         // Check if entry exists but isn't extracted
         const entryExists = session.entries.findIndex((e: SessionEntry) => e.__id === entryId || e.id === entryId);
         if (entryExists !== -1) {
+          const existingEntry = session.entries[entryExists];
+          // Check if it was previously restored (has _restored timestamp)
+          if (existingEntry._restored) {
+            return {
+              success: false,
+              error: 'Entry was previously restored but content is not currently extracted. If you need to keep this content long-term, consider setting _extractable: false.',
+              entryId,
+              keysRestored: [],
+              sizesBytes: {} as Record<string, number>,
+              totalSize: 0,
+              redacted: false,
+              previousRestoredAt: existingEntry._restored as string,
+              suggestion: 'Set _extractable: false on this entry to prevent future extraction.',
+            };
+          }
           return {
             success: false,
             error: 'Entry exists but has no extracted content',
             entryId,
             keysRestored: [],
-            sizesBytes: {},
+            sizesBytes: {} as Record<string, number>,
             totalSize: 0,
             redacted: false,
           };
@@ -81,11 +100,18 @@ export class RestoreService {
           error: 'Entry not found in session',
           entryId,
           keysRestored: [],
-          sizesBytes: {},
+          sizesBytes: {} as Record<string, number>,
           totalSize: 0,
           redacted: false,
         };
       }
+
+      // Get the current entry (should have [[extracted]] placeholders)
+      const currentEntry = session.entries[entryIndex];
+
+      // Check if this is a re-restore (entry already has _restored timestamp)
+      const isReRestore = !!currentEntry._restored;
+      const previousRestoredAt = currentEntry._restored;
 
       // Load extracted data from storage
       const extractedData = await this.storage.read(agentId, sessionId, entryId);
@@ -95,14 +121,11 @@ export class RestoreService {
           error: 'Extracted data not found in storage',
           entryId,
           keysRestored: [],
-          sizesBytes: {},
+          sizesBytes: {} as Record<string, number>,
           totalSize: 0,
           redacted: false,
         };
       }
-
-      // Get the current entry (should have [[extracted]] placeholders)
-      const currentEntry = session.entries[entryIndex];
 
       // Restore the content
       const restoredEntry = restoreExtractedContent(currentEntry, extractedData);
@@ -113,8 +136,14 @@ export class RestoreService {
       const sizesBytes: Record<string, number> = {};
       let totalSize = 0;
 
+      // Check for [[extracted-${entryId}]] placeholders
+      const expectedPlaceholder = `[[extracted-${entryId}]]`;
+
       for (const key of Object.keys(contentData)) {
-        if (currentEntry[key] === '[[extracted]]') {
+        const entryValue = currentEntry[key];
+        // Check for both old [[extracted]] and new [[extracted-${entryId}]] formats
+        if (entryValue === '[[extracted]]' || entryValue === expectedPlaceholder ||
+            (typeof entryValue === 'string' && entryValue.startsWith('[[extracted-'))) {
           keysRestored.push(key);
           const size = Buffer.byteLength(JSON.stringify(contentData[key]), 'utf8');
           sizesBytes[key] = size;
@@ -122,10 +151,12 @@ export class RestoreService {
         }
       }
 
-      // Mark the entry as recently restored (protected from re-extraction)
-      // _restored_at timestamp is used to determine if this entry should be
-      // protected from re-extraction
-      restoredEntry._restored_at = new Date().toISOString();
+      // Mark the entry as restored with timestamp
+      // _restored persists even if re-extracted later, used for:
+      // 1. Time-based re-extraction protection (keep_after_restore_seconds)
+      // 2. Detecting re-restores and guiding agents
+      // Spec: "_restored key is not removed when the message is extracted again"
+      restoredEntry._restored = new Date().toISOString();
 
       // Update the session entry
       session.entries[entryIndex] = restoredEntry;
@@ -140,9 +171,11 @@ export class RestoreService {
         keysRestored,
         sizesBytes,
         totalSize,
+        isReRestore,
       }, 'restored extracted entry');
 
-      return {
+      // Build result with optional guidance for re-restores
+      const result: RestoreResult = {
         success: true,
         entryId,
         keysRestored,
@@ -150,6 +183,13 @@ export class RestoreService {
         totalSize,
         redacted: false, // Caller handles redaction separately
       };
+
+      if (isReRestore && previousRestoredAt) {
+        result.previousRestoredAt = previousRestoredAt as string;
+        result.suggestion = 'This entry was previously restored. If you need to keep this content long-term, consider setting _extractable: false.';
+      }
+
+      return result;
 
     } catch (err: any) {
       log.error({
@@ -164,7 +204,7 @@ export class RestoreService {
         error: err.message,
         entryId,
         keysRestored: [],
-        sizesBytes: {},
+        sizesBytes: {} as Record<string, number>,
         totalSize: 0,
         redacted: false,
       };
