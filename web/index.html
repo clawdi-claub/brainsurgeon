@@ -13,6 +13,7 @@
         <div class="app-title">🧠 BrainSurgeon</div>
         <div class="header-controls">
             <input type="password" id="apiKeyInput" class="api-key-input" placeholder="🔒 API Key required" title="Enter API Key from server configuration">
+            <button class="restart-btn" onclick="openSettings()" title="Smart Pruning Settings">⚙️</button>
             <button class="restart-btn" onclick="showRestartDialog()" title="Restart OpenClaw Gateway">↻ Restart</button>
             <div class="filter-group">
                 <select id="statusFilter" class="filter-select">
@@ -238,6 +239,59 @@
             <!-- View Body -->
             <div class="modal-body" id="modalBody2">
                 <div class="loading">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal custom-modal" style="max-width:560px">
+            <div class="modal-head">
+                <div class="modal-title-text">⚙️ Smart Pruning Settings</div>
+                <button class="close-x" onclick="closeSettings()">×</button>
+            </div>
+            <div class="modal-body" id="settingsBody" style="padding:20px">
+                <div class="settings-form">
+                    <div class="settings-row">
+                        <label class="settings-label">Enabled</label>
+                        <input type="checkbox" id="settEnabled">
+                    </div>
+                    <div class="settings-row">
+                        <label class="settings-label">Trigger Types</label>
+                        <div class="settings-checkboxes" id="settTriggerTypes">
+                            <label><input type="checkbox" value="tool_result_size"> tool_result_size</label>
+                            <label><input type="checkbox" value="tool_result_age"> tool_result_age</label>
+                            <label><input type="checkbox" value="thinking_blocks"> thinking_blocks</label>
+                            <label><input type="checkbox" value="message_count"> message_count</label>
+                        </div>
+                    </div>
+                    <div class="settings-row">
+                        <label class="settings-label">Age Threshold (hours)</label>
+                        <input type="number" id="settAgeThreshold" min="0" step="1" class="settings-input">
+                    </div>
+                    <div class="settings-row">
+                        <label class="settings-label">Auto-Cron Expression</label>
+                        <input type="text" id="settAutoCron" class="settings-input" placeholder="*/30 * * * *">
+                    </div>
+                    <div class="settings-row">
+                        <label class="settings-label">Retention Duration</label>
+                        <input type="text" id="settRetention" class="settings-input" placeholder="30d">
+                    </div>
+                    <div class="settings-row">
+                        <label class="settings-label">Retention Cron</label>
+                        <input type="text" id="settRetentionCron" class="settings-input" placeholder="0 3 * * *">
+                    </div>
+                    <div class="settings-row">
+                        <label class="settings-label">Keep restore_remote calls</label>
+                        <input type="checkbox" id="settKeepRestore">
+                    </div>
+                    <div class="settings-timestamps" id="settTimestamps" style="margin-top:16px; font-size:0.85em; color:var(--text-secondary)"></div>
+                </div>
+            </div>
+            <div class="modal-footer" style="display:flex; gap:8px; justify-content:flex-end; padding:12px 20px">
+                <button class="restart-btn" onclick="runCronJob('auto-trigger')" title="Run smart prune now">▶ Run Prune</button>
+                <button class="restart-btn" onclick="runCronJob('retention-cleanup')" title="Run retention cleanup now">▶ Run Cleanup</button>
+                <button class="restart-btn" onclick="saveSettings()" style="background:var(--accent)">💾 Save</button>
             </div>
         </div>
     </div>

@@ -1694,3 +1694,92 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+// ── Toast notifications ────────────────────────────────────────
+function showToast(msg, type = 'success') {
+    const el = document.createElement('div');
+    el.textContent = msg;
+    Object.assign(el.style, {
+        position: 'fixed', bottom: '24px', right: '24px', zIndex: 10000,
+        padding: '10px 18px', borderRadius: '8px', fontSize: '0.9em',
+        background: type === 'error' ? '#e74c3c' : '#2ecc71', color: '#fff',
+        boxShadow: '0 4px 12px rgba(0,0,0,.3)', transition: 'opacity .3s',
+    });
+    document.body.appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 400); }, 2500);
+}
+
+// ── Settings Panel ─────────────────────────────────────────────
+
+async function openSettings() {
+    document.getElementById('settingsModal').classList.add('active');
+    try {
+        const r = await apiRequest(`${API}/config`);
+        if (!r.ok) throw new Error(`${r.status}`);
+        const cfg = await r.json();
+        document.getElementById('settEnabled').checked = !!cfg.enabled;
+        document.getElementById('settAgeThreshold').value = cfg.age_threshold_hours ?? 24;
+        document.getElementById('settAutoCron').value = cfg.auto_cron ?? '';
+        document.getElementById('settRetention').value = cfg.retention ?? '';
+        document.getElementById('settRetentionCron').value = cfg.retention_cron ?? '';
+        document.getElementById('settKeepRestore').checked = !!cfg.keep_restore_remote_calls;
+        // Trigger types checkboxes
+        const types = cfg.trigger_types || [];
+        document.querySelectorAll('#settTriggerTypes input[type=checkbox]').forEach(cb => {
+            cb.checked = types.includes(cb.value);
+        });
+        // Timestamps
+        const ts = [];
+        if (cfg.last_run_at) ts.push(`Last prune: ${formatDateTime(cfg.last_run_at)}`);
+        if (cfg.last_retention_run_at) ts.push(`Last cleanup: ${formatDateTime(cfg.last_retention_run_at)}`);
+        document.getElementById('settTimestamps').textContent = ts.join(' · ') || 'No runs yet';
+    } catch (e) {
+        document.getElementById('settingsBody').innerHTML = `<div style="color:var(--error)">Failed to load config: ${e.message}</div>`;
+    }
+}
+
+function closeSettings() {
+    document.getElementById('settingsModal').classList.remove('active');
+}
+
+async function saveSettings() {
+    const triggerTypes = [];
+    document.querySelectorAll('#settTriggerTypes input[type=checkbox]:checked').forEach(cb => {
+        triggerTypes.push(cb.value);
+    });
+    const update = {
+        enabled: document.getElementById('settEnabled').checked,
+        trigger_types: triggerTypes,
+        age_threshold_hours: Number(document.getElementById('settAgeThreshold').value) || 24,
+        auto_cron: document.getElementById('settAutoCron').value || undefined,
+        retention: document.getElementById('settRetention').value || undefined,
+        retention_cron: document.getElementById('settRetentionCron').value || undefined,
+        keep_restore_remote_calls: document.getElementById('settKeepRestore').checked,
+    };
+    try {
+        const r = await apiRequest(`${API}/config`, {
+            method: 'POST',
+            body: JSON.stringify(update),
+        });
+        if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.error || `${r.status}`);
+        }
+        closeSettings();
+        showToast('Settings saved ✓');
+    } catch (e) {
+        showToast(`Save failed: ${e.message}`, 'error');
+    }
+}
+
+async function runCronJob(name) {
+    try {
+        const r = await apiRequest(`${API}/cron/jobs/${name}/run`, {
+            method: 'POST',
+        });
+        if (!r.ok) throw new Error(`${r.status}`);
+        showToast(`${name} triggered ✓`);
+    } catch (e) {
+        showToast(`Run failed: ${e.message}`, 'error');
+    }
+}
