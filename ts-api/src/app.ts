@@ -71,7 +71,7 @@ const configRepository = new FileSystemConfigRepository(AGENTS_DIR);
 const configService = new BrainSurgeonConfigService(configRepository);
 
 // Initialize pruning and cron services
-const pruningExecutor = new SmartPruningExecutor(AGENTS_DIR);
+const pruningExecutor = new SmartPruningExecutor(AGENTS_DIR, sessionRepository);
 const cronService = new SmartPruningCronService(configService, pruningExecutor);
 
 // Create Hono app with /api base path for backward compatibility
