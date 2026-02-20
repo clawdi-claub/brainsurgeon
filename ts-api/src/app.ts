@@ -354,6 +354,20 @@ async function main() {
   // Start cron service for smart pruning
   await cronService.start();
 
+  // Run retention cleanup on startup (SP-07 requirement)
+  try {
+    const startupConfig = await configService.getFullConfig();
+    const retentionResult = await pruningExecutor.runRetentionCleanup(startupConfig.retention);
+    if (retentionResult.filesDeleted > 0) {
+      log.info({
+        filesDeleted: retentionResult.filesDeleted,
+        bytesReclaimed: retentionResult.bytesReclaimed,
+      }, 'startup retention cleanup completed');
+    }
+  } catch (err: any) {
+    log.warn({ err: err.message }, 'startup retention cleanup failed (non-fatal)');
+  }
+
   serve({
     fetch: app.fetch,
     port: PORT,
