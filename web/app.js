@@ -84,7 +84,7 @@ function apiRequest(url, options = {}) {
 
 // Format helpers
 function formatBytes(bytes) {
-    if (bytes === 0) return '0 B';
+    if (!bytes || !isFinite(bytes) || bytes <= 0) return '0 B';
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -213,20 +213,25 @@ async function confirmRestart() {
 async function loadAgents() {
     try {
         const r = await apiRequest(`${API}/agents`);
+        if (r.status === 401 || r.status === 403) {
+            showApiKeyBanner(true);
+            return;
+        }
         const data = await r.json();
+        showApiKeyBanner(false);
         const filter = document.getElementById('agentFilter');
         filter.innerHTML = '<button class="agent-btn active" data-agent="all">All</button>';
         data.agents.forEach(agent => {
             const btn = document.createElement('button');
             btn.className = 'agent-btn';
             btn.dataset.agent = agent;
-            btn.textContent = agent.split('-')[0];
+            btn.textContent = agent;
             btn.onclick = () => selectAgent(agent);
             filter.appendChild(btn);
         });
         filter.querySelector('[data-agent="all"]').onclick = () => selectAgent('all');
         
-        // Update type filter with agents
+        // Update dropdown agent filter
         updateTypeFilter(data.agents);
     } catch (e) {
         console.error('Failed to load agents', e);
@@ -235,7 +240,7 @@ async function loadAgents() {
 
 function updateTypeFilter(agents) {
     const typeFilter = document.getElementById('typeFilter');
-    typeFilter.innerHTML = '<option value="all">All Types</option>';
+    typeFilter.innerHTML = '<option value="all">All Agents</option>';
     agents.forEach(agent => {
         const opt = document.createElement('option');
         opt.value = agent;
@@ -249,6 +254,16 @@ async function loadSessions() {
     try {
         const url = currentAgent === 'all' ? `${API}/sessions` : `${API}/sessions?agent=${currentAgent}`;
         const r = await apiRequest(url);
+        if (r.status === 401 || r.status === 403) {
+            showApiKeyBanner(true);
+            document.getElementById('sessionGrid').innerHTML = '';
+            return;
+        }
+        if (!r.ok) {
+            document.getElementById('sessionGrid').innerHTML = '<div class="empty">Failed to load sessions</div>';
+            return;
+        }
+        showApiKeyBanner(false);
         const data = await r.json();
         sessions = data.sessions;
         renderSessions();
@@ -293,10 +308,11 @@ function getFilteredSessions() {
 }
 
 function updateStats(data) {
-    document.getElementById('statCount').textContent = data.sessions.length;
-    document.getElementById('statSize').textContent = formatBytes(data.total_size);
-    const totalMsgs = data.sessions.reduce((a, s) => a + s.messages, 0);
-    const totalTools = data.sessions.reduce((a, s) => a + s.tool_calls, 0);
+    const sessions = data.sessions || [];
+    document.getElementById('statCount').textContent = sessions.length;
+    document.getElementById('statSize').textContent = formatBytes(data.total_size || 0);
+    const totalMsgs = sessions.reduce((a, s) => a + (s.messages || 0), 0);
+    const totalTools = sessions.reduce((a, s) => a + (s.tool_calls || 0), 0);
     document.getElementById('statMessages').textContent = totalMsgs;
     document.getElementById('statTools').textContent = totalTools;
 }
@@ -1045,11 +1061,17 @@ function filterGroupByType(group) {
 
 function renderSessionBody(data) {
     // Store entries for editing (keep original indices)
-    window._currentEntries = data.entries;
+    const entries = data.entries || [];
+    window._currentEntries = entries;
     currentSessionData = data;
 
+    if (entries.length === 0) {
+        document.getElementById('modalBody2').innerHTML = '<div class="empty">No entries in this session</div>';
+        return;
+    }
+
     // Group tool calls with results (on ORIGINAL entries in chronological order)
-    let groupedEntries = groupToolCalls(data.entries);
+    let groupedEntries = groupToolCalls(entries);
     
     // Apply type filter to groups
     if (currentEntryTypeFilter !== 'all') {
@@ -1318,16 +1340,24 @@ async function viewSession(agent, id) {
 
     try {
         const r = await apiRequest(`${API}/sessions/${agent}/${id}`);
+        if (!r.ok) {
+            const errBody = await r.json().catch(() => ({}));
+            document.getElementById('modalBody2').innerHTML = `<div class="empty">${escapeHtml(errBody.error || 'Failed to load session')}</div>`;
+            return;
+        }
         const data = await r.json();
+
+        // Ensure entries is always an array
+        if (!Array.isArray(data.entries)) data.entries = [];
 
         // Update header - session ID is the main title
         document.getElementById('modalId').textContent = id;
 
-        // Update details panel
+        // Update details panel with safe defaults for missing/null values
         document.getElementById('detailAgent').textContent = data.agent || agent;
-        document.getElementById('detailSize').textContent = formatBytes(data.size);
-        document.getElementById('detailMessages').textContent = data.messages || 0;
-        document.getElementById('detailTools').textContent = data.tool_calls || 0;
+        document.getElementById('detailSize').textContent = formatBytes(data.size || 0);
+        document.getElementById('detailMessages').textContent = data.messages ?? 0;
+        document.getElementById('detailTools').textContent = data.tool_calls ?? 0;
         document.getElementById('detailDuration').textContent = formatDuration(data.duration_minutes);
         document.getElementById('detailCreated').textContent = data.created ? formatDateTime(data.created) : '—';
         document.getElementById('detailUpdated').textContent = data.updated ? formatDateTime(data.updated) : '—';
