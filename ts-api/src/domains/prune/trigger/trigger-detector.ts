@@ -1,6 +1,9 @@
 /**
  * Smart Pruning Trigger Logic
- * Detects entries matching configured trigger_types and age thresholds
+ * Detects entries matching configured trigger_types and position from end
+ * 
+ * CORE RULE: Keep the most recent `keep_recent` messages in context.
+ * Extract everything older than that threshold.
  */
 
 import type { TriggerType } from '../../../domains/config/model/config.js';
@@ -15,11 +18,19 @@ export interface SessionEntry {
   message?: {
     role?: string;
     created_at?: string;
+    content?: string;
   };
   role?: string;
   timestamp?: string | number;
   __ts?: number;
   time?: number;
+  content?: string;
+  text?: string;
+  output?: string;
+  result?: any;
+  data?: any;
+  /** Per-message extraction override */
+  _extractable?: boolean | number;
   [key: string]: any;
 }
 
@@ -33,12 +44,14 @@ export interface TriggerMatch {
   triggerType: TriggerType | null;
   /** Entry has __id field (can be extracted) */
   hasId: boolean;
-  /** Entry age in milliseconds */
-  ageMs: number;
-  /** Entry age meets threshold */
-  ageMeetsThreshold: boolean;
+  /** Entry position from end (0 = most recent) */
+  positionFromEnd: number;
+  /** Entry meets keep_recent threshold (position >= keep_recent) */
+  meetsPositionThreshold: boolean;
   /** Would be extracted (all conditions met) */
   shouldExtract: boolean;
+  /** Reason for not extracting (if shouldExtract is false) */
+  skipReason?: string;
 }
 
 /**
@@ -47,7 +60,8 @@ export interface TriggerMatch {
 export interface TriggerConfig {
   enabled: boolean;
   trigger_types: TriggerType[];
-  age_threshold_hours: number;
+  keep_recent: number;
+  min_value_length: number;
 }
 
 /**
@@ -57,60 +71,229 @@ export interface TriggerConfig {
  * 1. Smart pruning enabled
  * 2. Entry has __id field (required for extraction)
  * 3. Entry doesn't already have [[extracted]] placeholders
- * 4. Entry type matches one of trigger_types
- * 5. Entry age >= age_threshold_hours (if threshold > 0)
+ * 4. Entry type matches one of trigger_types OR _extractable override
+ * 5. Entry position >= keep_recent (old enough to extract)
+ * 6. Entry has content values > min_value_length (worth extracting)
  * 
  * @param entry - Session entry from JSONL
  * @param config - Trigger configuration
- * @param entryIndex - Index of entry in session (for fallback age estimation)
- * @param now - Current timestamp (default: Date.now())
+ * @param positionFromEnd - Position from end of session (0 = most recent)
  * @returns TriggerMatch result
  */
 export function detectTrigger(
   entry: SessionEntry,
   config: TriggerConfig,
-  entryIndex: number,
-  now: number = Date.now()
+  positionFromEnd: number,
 ): TriggerMatch {
   // Check 1: Enabled
   if (!config.enabled) {
-    return { 
-      matched: false, 
-      triggerType: null, 
-      hasId: false, 
-      ageMs: 0, 
-      ageMeetsThreshold: false, 
-      shouldExtract: false 
+    return {
+      matched: false,
+      triggerType: null,
+      hasId: false,
+      positionFromEnd,
+      meetsPositionThreshold: false,
+      shouldExtract: false,
+      skipReason: 'smart_pruning_disabled',
     };
   }
 
   // Check 2: Has __id field
   const hasId = !!entry.__id;
+  if (!hasId) {
+    return {
+      matched: false,
+      triggerType: null,
+      hasId: false,
+      positionFromEnd,
+      meetsPositionThreshold: false,
+      shouldExtract: false,
+      skipReason: 'no_entry_id',
+    };
+  }
 
   // Check 3: Not already extracted
-  const values = JSON.stringify(entry);
-  const alreadyExtracted = values.includes('[[extracted]]');
+  if (hasExtractedPlaceholders(entry)) {
+    return {
+      matched: false,
+      triggerType: null,
+      hasId: true,
+      positionFromEnd,
+      meetsPositionThreshold: false,
+      shouldExtract: false,
+      skipReason: 'already_extracted',
+    };
+  }
 
-  // Check 4: Type detection
+  // Check 4: _extractable override (can force extract or prevent extract)
+  const extractableOverride = getExtractableOverride(entry, positionFromEnd, config.keep_recent);
+  
+  if (extractableOverride === 'force') {
+    // Force extraction regardless of type
+    const hasLargeValues = checkValueSizes(entry, config.min_value_length);
+    return {
+      matched: true,
+      triggerType: 'assistant', // Default when forced
+      hasId: true,
+      positionFromEnd,
+      meetsPositionThreshold: true,
+      shouldExtract: hasLargeValues.hasLargeValues,
+      skipReason: hasLargeValues.hasLargeValues ? undefined : 'values_too_small',
+    };
+  }
+  
+  if (extractableOverride === 'prevent') {
+    return {
+      matched: false,
+      triggerType: null,
+      hasId: true,
+      positionFromEnd,
+      meetsPositionThreshold: false,
+      shouldExtract: false,
+      skipReason: '_extractable_false',
+    };
+  }
+
+  // Check 5: Type detection
   const detectedType = detectEntryType(entry);
   const matched = detectedType !== null && config.trigger_types.includes(detectedType);
-  const triggerType = matched ? detectedType : null;
+  
+  if (!matched) {
+    return {
+      matched: false,
+      triggerType: null,
+      hasId: true,
+      positionFromEnd,
+      meetsPositionThreshold: false,
+      shouldExtract: false,
+      skipReason: 'type_not_matched',
+    };
+  }
 
-  // Check 5: Age threshold
-  const ageMs = calculateEntryAge(entry, entryIndex, now);
-  const ageMeetsThreshold = config.age_threshold_hours === 0 
-    || ageMs >= (config.age_threshold_hours * 3600000);
+  // Check 6: Position threshold (keep_recent)
+  // Position 0 = most recent, position keep_recent and beyond = extract
+  const meetsPositionThreshold = positionFromEnd >= config.keep_recent;
+  
+  if (!meetsPositionThreshold) {
+    return {
+      matched: true,
+      triggerType: detectedType,
+      hasId: true,
+      positionFromEnd,
+      meetsPositionThreshold: false,
+      shouldExtract: false,
+      skipReason: 'too_recent',
+    };
+  }
 
-  // All checks must pass for extraction
-  const shouldExtract = matched && hasId && !alreadyExtracted && ageMeetsThreshold;
+  // Check 7: Value sizes (only extract if there's content worth extracting)
+  const valueSizeCheck = checkValueSizes(entry, config.min_value_length);
+  
+  if (!valueSizeCheck.hasLargeValues) {
+    return {
+      matched: true,
+      triggerType: detectedType,
+      hasId: true,
+      positionFromEnd,
+      meetsPositionThreshold: true,
+      shouldExtract: false,
+      skipReason: 'values_too_small',
+    };
+  }
 
+  // All checks pass - should extract
   return {
-    matched,
-    triggerType,
-    hasId,
-    ageMs,
-    ageMeetsThreshold,
-    shouldExtract,
+    matched: true,
+    triggerType: detectedType,
+    hasId: true,
+    positionFromEnd,
+    meetsPositionThreshold: true,
+    shouldExtract: true,
+  };
+}
+
+/**
+ * Get _extractable override status for an entry
+ * 
+ * @returns 'force' | 'prevent' | 'default'
+ */
+function getExtractableOverride(
+  entry: SessionEntry,
+  positionFromEnd: number,
+  keepRecent: number
+): 'force' | 'prevent' | 'default' {
+  const extractable = entry._extractable;
+  
+  if (extractable === true) {
+    return 'force';
+  }
+  
+  if (extractable === false) {
+    return 'prevent';
+  }
+  
+  if (typeof extractable === 'number') {
+    // Keep for this many messages (override global keep_recent)
+    if (positionFromEnd < extractable) {
+      return 'prevent'; // Still within the keep window
+    }
+    // Beyond the custom keep window - allow normal extraction
+    return 'default';
+  }
+  
+  return 'default';
+}
+
+/**
+ * Check if entry has content values larger than min_value_length
+ * Returns which keys are large enough to extract
+ */
+export function checkValueSizes(
+  entry: SessionEntry,
+  minValueLength: number
+): { 
+  hasLargeValues: boolean;
+  largeKeys: { key: string; length: number }[];
+  totalSize: number;
+} {
+  const largeKeys: { key: string; length: number }[] = [];
+  let totalSize = 0;
+  
+  const keysToCheck = ['content', 'text', 'output', 'result', 'data', 'thinking', 'message'];
+  
+  for (const key of keysToCheck) {
+    const value = entry[key];
+    if (value === undefined || value === null) continue;
+    
+    let length = 0;
+    
+    if (typeof value === 'string') {
+      length = value.length;
+    } else if (typeof value === 'object') {
+      // For objects, check the stringified length
+      const str = JSON.stringify(value);
+      length = str.length;
+    }
+    
+    if (length >= minValueLength) {
+      largeKeys.push({ key, length });
+      totalSize += length;
+    }
+  }
+  
+  // Also check nested message.content
+  if (entry.message?.content && typeof entry.message.content === 'string') {
+    const length = entry.message.content.length;
+    if (length >= minValueLength && !largeKeys.find(k => k.key === 'message.content')) {
+      largeKeys.push({ key: 'message.content', length });
+      totalSize += length;
+    }
+  }
+  
+  return {
+    hasLargeValues: largeKeys.length > 0,
+    largeKeys,
+    totalSize,
   };
 }
 
@@ -201,7 +384,7 @@ function normalizeType(type: string): TriggerType | null {
  */
 function inferTypeFromContent(entry: SessionEntry): TriggerType | null {
   // Check for thinking content
-  if (entry.thinking || entry.data?.thinking || entry.content?.thinking) {
+  if (entry.thinking || entry.data?.thinking) {
     return 'thinking';
   }
   
@@ -214,56 +397,13 @@ function inferTypeFromContent(entry: SessionEntry): TriggerType | null {
 }
 
 /**
- * Calculate entry age in milliseconds
- * Priority order for timestamp sources:
- * 1. entry.timestamp (ISO string or milliseconds)
- * 2. entry.__ts (OpenClaw internal timestamp)
- * 3. entry.message?.created_at
- * 4. entry.time (milliseconds)
- * 5. Fallback: entryIndex * 60 seconds (estimated)
+ * Check if an entry has any [[extracted]] placeholders
+ * Used to prevent double-extraction
  * 
- * @param entry - Session entry
- * @param entryIndex - Index in session (for fallback)
- * @param now - Current timestamp
- * @returns Age in milliseconds
+ * @param entry - Entry to check
+ * @returns true if already has extracted placeholders
  */
-function calculateEntryAge(
-  entry: SessionEntry, 
-  entryIndex: number, 
-  now: number
-): number {
-  let entryTime: number | null = null;
-
-  // Priority 1: entry.timestamp
-  if (entry.timestamp !== undefined) {
-    if (typeof entry.timestamp === 'string') {
-      entryTime = new Date(entry.timestamp).getTime();
-    } else if (typeof entry.timestamp === 'number') {
-      entryTime = entry.timestamp;
-    }
-  }
-
-  // Priority 2: entry.__ts
-  if (entryTime === null && entry.__ts !== undefined) {
-    entryTime = entry.__ts;
-  }
-
-  // Priority 3: entry.message?.created_at
-  if (entryTime === null && entry.message?.created_at) {
-    entryTime = new Date(entry.message.created_at).getTime();
-  }
-
-  // Priority 4: entry.time
-  if (entryTime === null && entry.time !== undefined) {
-    entryTime = entry.time;
-  }
-
-  // Priority 5: Fallback estimation
-  if (entryTime === null || isNaN(entryTime)) {
-    // Estimate: 60 seconds per entry
-    entryTime = now - (entryIndex * 60 * 1000);
-  }
-
-  // Ensure non-negative age
-  return Math.max(0, now - entryTime);
+export function hasExtractedPlaceholders(entry: SessionEntry): boolean {
+  const json = JSON.stringify(entry);
+  return json.includes('[[extracted]]');
 }

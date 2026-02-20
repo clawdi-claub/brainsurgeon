@@ -80,13 +80,35 @@ export class BrainSurgeonConfigService implements ConfigService {
       }
     }
     
-    // Validate age_threshold_hours
-    if (update.age_threshold_hours !== undefined) {
-      if (typeof update.age_threshold_hours !== 'number' || 
-          update.age_threshold_hours < 0 || 
-          update.age_threshold_hours > 720) {
+    // Validate keep_recent
+    if (update.keep_recent !== undefined) {
+      if (typeof update.keep_recent !== 'number' || 
+          update.keep_recent < 0 || 
+          update.keep_recent > 100) {
         throw new ValidationError(
-          'age_threshold_hours must be a number between 0 and 720 (30 days)'
+          'keep_recent must be a number between 0 and 100 (messages to keep in context)'
+        );
+      }
+    }
+    
+    // Validate min_value_length
+    if (update.min_value_length !== undefined) {
+      if (typeof update.min_value_length !== 'number' || 
+          update.min_value_length < 0 || 
+          update.min_value_length > 100000) {
+        throw new ValidationError(
+          'min_value_length must be a number between 0 and 100000 (characters)'
+        );
+      }
+    }
+    
+    // Validate scan_interval_seconds
+    if (update.scan_interval_seconds !== undefined) {
+      if (typeof update.scan_interval_seconds !== 'number' || 
+          update.scan_interval_seconds < 10 || 
+          update.scan_interval_seconds > 3600) {
+        throw new ValidationError(
+          'scan_interval_seconds must be a number between 10 and 3600 (10 seconds to 1 hour)'
         );
       }
     }
@@ -160,7 +182,9 @@ export class BrainSurgeonConfigService implements ConfigService {
     return {
       enabled: config.enabled,
       trigger_types: config.trigger_types,
-      age_threshold_hours: config.age_threshold_hours,
+      keep_recent: config.keep_recent,
+      min_value_length: config.min_value_length,
+      scan_interval_seconds: config.scan_interval_seconds,
       auto_cron: config.auto_cron,
       retention: config.retention,
       retention_cron: config.retention_cron,

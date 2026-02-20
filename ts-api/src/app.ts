@@ -37,6 +37,7 @@ import { FileSystemConfigRepository, BrainSurgeonConfigService } from './domains
 import { SmartPruningCronService } from './domains/prune/cron/cron-service.js';
 import { SmartPruningExecutor } from './domains/prune/executor/pruning-executor.js';
 import { createCronRoutes } from './domains/prune/api/cron-routes.js';
+import { RestoreService } from './domains/prune/restore/restore-service.js';
 
 // Infrastructure
 import { SqliteMessageBus } from './infrastructure/bus/sqlite-bus.js';
@@ -76,6 +77,9 @@ const extractionStorage = new ExtractionStorage({ agentsDir: AGENTS_DIR });
 const pruningExecutor = new SmartPruningExecutor(AGENTS_DIR, sessionRepository);
 const cronService = new SmartPruningCronService(configService, pruningExecutor);
 
+// Initialize restore service
+const restoreService = new RestoreService(extractionStorage, sessionRepository);
+
 // Create Hono app with /api base path for backward compatibility
 const apiApp = new Hono();
 
@@ -83,7 +87,7 @@ const apiApp = new Hono();
 apiApp.get('/health', (c) => c.json({ status: 'ok', version: '2.0.0' }));
 
 // Mount session routes
-const sessionRoutes = createSessionRoutes(sessionService, pruneService, extractionStorage);
+const sessionRoutes = createSessionRoutes(sessionService, pruneService, extractionStorage, restoreService);
 apiApp.route('/sessions', sessionRoutes);
 
 // Mount trash routes

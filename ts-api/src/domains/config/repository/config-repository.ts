@@ -62,7 +62,9 @@ export class FileSystemConfigRepository implements ConfigRepository {
     return {
       enabled: partial.enabled ?? false,
       trigger_types: partial.trigger_types ?? ['thinking', 'tool_result'],
-      age_threshold_hours: partial.age_threshold_hours ?? 24,
+      keep_recent: partial.keep_recent ?? 3,
+      min_value_length: partial.min_value_length ?? 500,
+      scan_interval_seconds: partial.scan_interval_seconds ?? 30,
       auto_cron: partial.auto_cron ?? '*/2 * * * *',
       last_run_at: partial.last_run_at ?? null,
       retention: partial.retention ?? '24h',

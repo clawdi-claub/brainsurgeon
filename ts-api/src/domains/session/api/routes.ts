@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { SessionService } from '../services/session-service.js';
 import type { PruneService } from '../services/prune-service.js';
 import type { ExtractionStorage } from '../../prune/extraction/extraction-storage.js';
+import { RestoreService } from '../../prune/restore/restore-service.js';
 import { moveExtractedToTrash } from '../../prune/extraction/extraction-trash.js';
 import { mapSessionListItem, mapSessionDetail } from './response-mapper.js';
 import { generateSessionSummary } from '../services/summary-service.js';
@@ -15,6 +16,7 @@ export function createSessionRoutes(
   sessionService: SessionService,
   pruneService: PruneService,
   extractionStorage?: ExtractionStorage,
+  restoreService?: RestoreService,
 ): Hono {
   const app = new Hono();
 
@@ -231,6 +233,53 @@ export function createSessionRoutes(
     } catch (error) {
       log.error({ err: error, agentId, sessionId, entryId }, 'failed to read extracted content');
       return c.json({ error: 'Failed to read extracted content' }, 500);
+    }
+  });
+
+  // POST /sessions/:agent/:id/entries/:entryId/restore — restore extracted content
+  app.post('/:agent/:id/entries/:entryId/restore', async (c) => {
+    const agentId = sanitizeId(c.req.param('agent'), 'agent');
+    const sessionId = sanitizeId(c.req.param('id'), 'session_id');
+    const entryId = sanitizeId(c.req.param('entryId'), 'entry');
+
+    if (!restoreService) {
+      return c.json({ error: 'Restore service not configured' }, 501);
+    }
+
+    try {
+      const result = await restoreService.restoreEntry({
+        agentId,
+        sessionId,
+        entryId,
+      });
+
+      if (!result.success) {
+        return c.json({
+          error: result.error,
+          entryId,
+          agent: agentId,
+          session: sessionId,
+        }, 400);
+      }
+
+      auditLog('restore', agentId, sessionId, c.req.header('X-API-Key'), {
+        entryId,
+        keysRestored: result.keysRestored,
+        totalSize: result.totalSize,
+      });
+
+      return c.json({
+        restored: true,
+        entryId,
+        agent: agentId,
+        session: sessionId,
+        keysRestored: result.keysRestored,
+        sizesBytes: result.sizesBytes,
+        totalSize: result.totalSize,
+      });
+    } catch (error) {
+      log.error({ err: error, agentId, sessionId, entryId }, 'failed to restore entry');
+      return c.json({ error: 'Failed to restore entry' }, 500);
     }
   });
 

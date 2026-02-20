@@ -17,6 +17,8 @@ export interface ExtractionResult {
   extractedKeys: string[];
   /** Size in bytes of extracted data */
   extractedSize: number;
+  /** Size per key for logging */
+  sizesBytes: Record<string, number>;
   /** Entry with placeholders in main session */
   modifiedEntry: SessionEntry;
   /** Data to write to extracted file */
@@ -57,6 +59,7 @@ export function extractEntryKeys(
   try {
     const extractedKeys: string[] = [];
     const extractedData: Record<string, any> = {};
+    const sizesBytes: Record<string, number> = {};
     const modifiedEntry: SessionEntry = { ...entry };
 
     // Determine which keys to extract based on trigger type
@@ -74,9 +77,13 @@ export function extractEntryKeys(
       // Skip non-serializable values (functions, etc.)
       if (typeof value === 'function') continue;
 
+      // Calculate size before extracting
+      const sizeBytes = Buffer.byteLength(JSON.stringify(value), 'utf8');
+
       // Extract the value
       extractedData[key] = value;
       extractedKeys.push(key);
+      sizesBytes[key] = sizeBytes;
 
       // Replace with placeholder in modified entry
       modifiedEntry[key] = '[[extracted]]';
@@ -93,6 +100,7 @@ export function extractEntryKeys(
       if (nestedResult.extractedKeys.length > 0) {
         extractedKeys.push(...nestedResult.extractedKeys.map(k => `data.${k}`));
         Object.assign(extractedData, nestedResult.extractedData);
+        Object.assign(sizesBytes, nestedResult.sizesBytes);
         modifiedEntry.data = nestedResult.modifiedData;
       }
     }
@@ -110,6 +118,7 @@ export function extractEntryKeys(
       success: true,
       extractedKeys,
       extractedSize,
+      sizesBytes,
       modifiedEntry,
       extractedData,
     };
@@ -120,6 +129,7 @@ export function extractEntryKeys(
       error: err.message,
       extractedKeys: [],
       extractedSize: 0,
+      sizesBytes: {},
       modifiedEntry: entry,
       extractedData: {},
     };
@@ -175,10 +185,12 @@ function extractNestedData(
 ): {
   extractedKeys: string[];
   extractedData: Record<string, any>;
+  sizesBytes: Record<string, number>;
   modifiedData: Record<string, any>;
 } {
   const extractedKeys: string[] = [];
   const extractedData: Record<string, any> = {};
+  const sizesBytes: Record<string, number> = {};
   const modifiedData: Record<string, any> = { ...data };
 
   // Determine which nested keys to extract
@@ -199,13 +211,15 @@ function extractNestedData(
 
   for (const key of keysToCheck) {
     if (key in data) {
+      const sizeBytes = Buffer.byteLength(JSON.stringify(data[key]), 'utf8');
       extractedData[key] = data[key];
       extractedKeys.push(`${prefix}.${key}`);
+      sizesBytes[`${prefix}.${key}`] = sizeBytes;
       modifiedData[key] = '[[extracted]]';
     }
   }
 
-  return { extractedKeys, extractedData, modifiedData };
+  return { extractedKeys, extractedData, sizesBytes, modifiedData };
 }
 
 /**

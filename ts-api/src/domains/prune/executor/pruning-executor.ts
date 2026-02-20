@@ -27,6 +27,7 @@ export class SmartPruningExecutor implements PruningExecutor {
   /**
    * Run smart pruning across all sessions.
    * For each session: detect trigger-matching entries → extract → save placeholders.
+   * Uses position-based logic: keep most recent `keep_recent` messages, extract older ones.
    */
   async runSmartPruning(config: SmartPruningConfig): Promise<{
     sessionsScanned: number;
@@ -40,7 +41,8 @@ export class SmartPruningExecutor implements PruningExecutor {
 
     log.info({
       trigger_types: config.trigger_types,
-      age_threshold_hours: config.age_threshold_hours,
+      keep_recent: config.keep_recent,
+      min_value_length: config.min_value_length,
     }, 'starting smart pruning run');
 
     const sessions = await this.sessionRepo.list();
@@ -52,8 +54,11 @@ export class SmartPruningExecutor implements PruningExecutor {
         const session = await this.sessionRepo.load(item.agentId, item.id);
         let modified = false;
 
+        // Process entries from oldest to newest
+        // Position from end: 0 = most recent, session.entries.length-1 = oldest
         for (let i = 0; i < session.entries.length; i++) {
           const entry = session.entries[i];
+          const positionFromEnd = session.entries.length - 1 - i;
 
           // Skip entries without __id (can't be extracted)
           if (!entry.__id) continue;
@@ -64,8 +69,9 @@ export class SmartPruningExecutor implements PruningExecutor {
           const match = detectTrigger(entry, {
             enabled: config.enabled,
             trigger_types: config.trigger_types,
-            age_threshold_hours: config.age_threshold_hours,
-          }, i);
+            keep_recent: config.keep_recent,
+            min_value_length: config.min_value_length,
+          }, positionFromEnd);
 
           if (!match.shouldExtract || !match.triggerType) continue;
 
@@ -93,7 +99,9 @@ export class SmartPruningExecutor implements PruningExecutor {
             entryId: entry.__id,
             triggerType: match.triggerType,
             keys: result.extractedKeys,
-            sizeBytes,
+            sizesBytes: result.sizesBytes,
+            totalSize: sizeBytes,
+            positionFromEnd,
           }, 'extracted entry');
         }
 
