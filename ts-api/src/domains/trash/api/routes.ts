@@ -1,6 +1,11 @@
 import { Hono } from 'hono';
 import type { TrashService } from '../services/trash-service.js';
 import type { TrashedSession } from '../repository/trash-repository.js';
+import type { ExtractionStorage } from '../../prune/extraction/extraction-storage.js';
+import { restoreExtractedFromTrash, deleteExtractedFromTrash } from '../../prune/extraction/extraction-trash.js';
+import { createLogger } from '../../../shared/logging/logger.js';
+
+const log = createLogger('trash-routes');
 
 /** Map internal TrashedSession to Python API-compatible field names for the UI */
 function mapTrashItem(s: TrashedSession) {
@@ -14,7 +19,11 @@ function mapTrashItem(s: TrashedSession) {
   };
 }
 
-export function createTrashRoutes(trashService: TrashService): Hono {
+export function createTrashRoutes(
+  trashService: TrashService,
+  extractionStorage?: ExtractionStorage,
+  agentsDir?: string,
+): Hono {
   const app = new Hono();
 
   // GET /trash - List trashed sessions (Python API-compatible)
@@ -30,6 +39,19 @@ export function createTrashRoutes(trashService: TrashService): Hono {
 
     try {
       await trashService.restore(agentId, sessionId);
+
+      // Also restore extracted files from trash (SP-08)
+      if (extractionStorage) {
+        try {
+          const restored = await restoreExtractedFromTrash(extractionStorage, agentId, sessionId);
+          if (restored) {
+            log.info({ agentId, sessionId }, 'restored extracted files from trash');
+          }
+        } catch (err) {
+          log.warn({ agentId, sessionId, err }, 'failed to restore extracted files (non-fatal)');
+        }
+      }
+
       return c.json({ restored: true, id: sessionId });
     } catch (error) {
       if (error instanceof Error && error.name === 'NotFoundError') {
@@ -52,6 +74,18 @@ export function createTrashRoutes(trashService: TrashService): Hono {
 
     try {
       await trashService.deletePermanently(agentId, sessionId);
+
+      // Also permanently delete extracted files (SP-08)
+      if (extractionStorage && agentsDir) {
+        try {
+          // Delete from both trash and live extracted dirs
+          await deleteExtractedFromTrash(agentsDir, agentId, sessionId);
+          await extractionStorage.deleteAll(agentId, sessionId);
+        } catch (err) {
+          log.warn({ agentId, sessionId, err }, 'failed to delete extracted files (non-fatal)');
+        }
+      }
+
       return c.json({ deleted: true, id: sessionId });
     } catch (error) {
       if (error instanceof Error && error.name === 'NotFoundError') {

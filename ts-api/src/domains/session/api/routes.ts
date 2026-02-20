@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { SessionService } from '../services/session-service.js';
 import type { PruneService } from '../services/prune-service.js';
 import type { ExtractionStorage } from '../../prune/extraction/extraction-storage.js';
+import { moveExtractedToTrash } from '../../prune/extraction/extraction-trash.js';
 import { mapSessionListItem, mapSessionDetail } from './response-mapper.js';
 import { generateSessionSummary } from '../services/summary-service.js';
 import { sanitizeId } from '../../../shared/middleware/sanitize.js';
@@ -233,7 +234,7 @@ export function createSessionRoutes(
     }
   });
 
-  // DELETE /sessions/:agent/:id — moves to trash, also deletes child sessions
+  // DELETE /sessions/:agent/:id — moves to trash, also deletes child sessions + extracted files
   app.delete('/:agent/:id', async (c) => {
     const agentId = sanitizeId(c.req.param('agent'), 'agent');
     const sessionId = sanitizeId(c.req.param('id'), 'session_id');
@@ -246,17 +247,50 @@ export function createSessionRoutes(
 
       await sessionService.deleteSession(agentId, sessionId);
 
-      // Also delete child sessions
+      // Move extracted files to trash (SP-08)
+      let extractedFileCount = 0;
+      if (extractionStorage) {
+        try {
+          const size = await extractionStorage.sessionSize(agentId, sessionId);
+          extractedFileCount = size.files;
+          if (size.files > 0) {
+            // Move extracted dir to trash location alongside .jsonl
+            await moveExtractedToTrash(extractionStorage, agentId, sessionId);
+            auditLog('delete_extracted', agentId, sessionId, c.req.header('X-API-Key'), {
+              filesRemoved: size.files,
+              bytesRemoved: size.bytes,
+            });
+          }
+        } catch (err) {
+          log.warn({ agentId, sessionId, err }, 'failed to move extracted files to trash (non-fatal)');
+        }
+      }
+
+      // Also delete child sessions + their extracted files
       for (const child of children) {
         try {
           await sessionService.deleteSession(agentId, child.sessionId);
+          if (extractionStorage) {
+            try {
+              const childSize = await extractionStorage.sessionSize(agentId, child.sessionId);
+              if (childSize.files > 0) {
+                await moveExtractedToTrash(extractionStorage, agentId, child.sessionId);
+              }
+            } catch { /* non-fatal */ }
+          }
           auditLog('delete_child', agentId, child.sessionId, c.req.header('X-API-Key'), { parent: sessionId });
         } catch {
           // Don't fail if child doesn't exist
         }
       }
 
-      return c.json({ deleted: true, id: sessionId, moved_to_trash: true, children_deleted: children.length });
+      return c.json({
+        deleted: true,
+        id: sessionId,
+        moved_to_trash: true,
+        children_deleted: children.length,
+        extracted_files_trashed: extractedFileCount,
+      });
     } catch (error) {
       if (error instanceof Error && error.name === 'NotFoundError') {
         return c.json({ error: error.message }, 404);

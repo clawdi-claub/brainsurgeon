@@ -87,7 +87,7 @@ const sessionRoutes = createSessionRoutes(sessionService, pruneService, extracti
 apiApp.route('/sessions', sessionRoutes);
 
 // Mount trash routes
-const trashRoutes = createTrashRoutes(trashService);
+const trashRoutes = createTrashRoutes(trashService, extractionStorage, AGENTS_DIR);
 apiApp.route('/trash', trashRoutes);
 
 // Mount lock routes

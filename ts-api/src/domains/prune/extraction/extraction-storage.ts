@@ -34,6 +34,11 @@ export class ExtractionStorage {
     this.agentsDir = opts.agentsDir;
   }
 
+  /** Expose agentsDir for trash operations. */
+  getAgentsDir(): string {
+    return this.agentsDir;
+  }
+
   /**
    * Resolve path to the extracted directory for a session.
    */
