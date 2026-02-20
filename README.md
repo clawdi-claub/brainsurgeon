@@ -119,25 +119,54 @@ exec:curl http://localhost:8000/agents
 | `DATA_DIR` | `/data` | Path for BrainSurgeon data (bus.db, etc.) |
 | `LOG_LEVEL` | `info` | Log level (debug, info, warn, error) |
 
-### Smart Pruning Configuration
+### Extraction Configuration
 
-Smart pruning automatically extracts large content (thinking blocks, tool results) to separate files.
+BrainSurgeon extracts large content from session files to keep OpenClaw's context lean and fast.
+
+**How It Works:**
+- Keep the most recent `keep_recent` messages in context
+- Extract everything older than that to separate files
+- Extracted values are replaced with `[[extracted]]` placeholders
+- Agent can restore values on-demand via the `restore_remote` tool
+- Skill content and important context can be protected with `_extractable` metadata
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `enabled` | `true` | Enable smart pruning |
-| `trigger_types` | `thinking,tool_result` | Entry types to extract |
-| `age_threshold_hours` | `48` | Only extract entries older than this |
-| `auto_cron` | `*/2 * * * *` | Cron schedule for auto-pruning |
+| `enabled` | `true` | Enable extraction |
+| `keep_recent` | `3` | Keep this many recent messages in context |
+| `min_value_length` | `500` | Only extract values longer than this (chars) |
+| `trigger_types` | `tool_call,tool_result` | Message types to process for extraction |
+| `scan_interval_seconds` | `30` | How often to check for extractable content |
 | `retention` | `24h` | How long to keep extracted files |
 | `retention_cron` | `0 */6 * * *` | Cron schedule for retention cleanup |
+
+**Per-Message Control (`_extractable` field):**
+- `true` — Force extractable (even if wrong type)
+- `false` — Never extract (use for skill files you want always in context)
+- `{integer}` — Keep for this many messages (overrides global `keep_recent`)
+
+Example: Protect skill content from extraction
+```json
+{
+  "type": "tool_result",
+  "text": "# Skill: File Operations\n...",
+  "_extractable": false
+}
+```
+
+**Restore Mechanism:**
+1. Agent calls `restore_remote` when it needs extracted content
+2. System restores the value and redacts the tool call to `remote_restore` placeholder
+3. Restored value is protected from re-extraction for `keep_recent` messages
 
 Configure via the web UI (⚙️ Settings button) or API:
 ```bash
 curl -X POST http://localhost:8000/api/config \
   -H "Content-Type: application/json" \
-  -d '{"enabled":true,"trigger_types":["thinking","tool_result"],"retention":"48h"}'
+  -d '{"enabled":true,"keep_recent":3,"min_value_length":500}'
 ```
+
+**⚠️ Implementation Status:** See [docs/EXTRACTION_SPEC.md](docs/EXTRACTION_SPEC.md) for full specification and current implementation gaps.
 
 ### Security
 
