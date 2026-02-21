@@ -222,54 +222,180 @@ const plugin = {
     log.info('BrainSurgeon plugin registering...');
     log.debug?.(`BrainSurgeon config: agentsDir=${cfg.agentsDir}, apiUrl=${cfg.apiUrl}, autoPrune=${cfg.enableAutoPrune}`);
 
-    // ── restore_remote tool ───────────────────────────────────────────
+    // ── purge_control tool ────────────────────────────────────────────
+    // Unified tool for controlling BrainSurgeon extraction
+    // Actions: get_context, restore, set_extractable
     api.registerTool(
       (ctx: any) => {
         if (!ctx?.agentId) return null;
         return {
-          name: 'restore_remote',
-          description: 'Restore extracted content from external storage into the session. Use when you see [[extracted-...]] placeholders.',
+          name: 'purge_control',
+          description: 'Control BrainSurgeon extraction: get_context (view session stats), restore (restore extracted content), set_extractable (mark entries for extraction control).',
           parameters: {
             type: 'object',
-            required: ['session', 'entry'],
+            required: ['action'],
             properties: {
-              session: { type: 'string', description: 'Session ID containing the extracted entry' },
-              entry: { type: 'string', description: 'Entry ID (the __id or id field) of the entry with extracted content' },
-              keys: { type: 'string', description: 'Comma-separated list of specific keys to restore (default: all)' },
+              action: {
+                type: 'string',
+                enum: ['get_context', 'restore', 'set_extractable'],
+                description: 'Action to perform: get_context (view stats), restore (restore content), set_extractable (control extraction)',
+              },
+              session: {
+                type: 'string',
+                description: 'Session ID (required for all actions)',
+              },
+              entry: {
+                type: 'string',
+                description: 'Entry ID (required for restore and set_extractable actions)',
+              },
+              keys: {
+                type: 'string',
+                description: 'Comma-separated list of keys to restore (optional, for restore action)',
+              },
+              value: {
+                type: 'string',
+                description: 'Value for set_extractable: "true", "false", or integer (e.g., "10")',
+              },
             },
           },
-          async execute(_toolCallId: string, params: { session: string; entry: string; keys?: string }) {
+          async execute(_toolCallId: string, params: { 
+            action: string; 
+            session?: string; 
+            entry?: string; 
+            keys?: string;
+            value?: string;
+          }) {
             const agentId = ctx.agentId!;
-            const keysArr = params.keys?.split(',').map(k => k.trim()) || undefined;
-
-            const result = await restoreEntry(
-              cfg.agentsDir,
-              agentId,
-              params.session,
-              params.entry,
-              keysArr,
-              log,
-            );
-
-            if (!result.success) {
+            
+            if (!params.session) {
               return {
-                content: [{ type: 'text', text: `Restore failed: ${result.error}${result.suggestion ? `\n\nSuggestion: ${result.suggestion}` : ''}` }],
+                content: [{ type: 'text', text: 'Error: session parameter is required' }],
               };
             }
 
-            let text = `Restored ${result.restoredKeys?.length || 0} keys for entry ${params.entry}\nKeys: ${result.restoredKeys?.join(', ') || 'none'}`;
-            if (result.suggestion) {
-              text += `\n\nNote: ${result.suggestion}`;
+            // ── Action: get_context ─────────────────────────────────────
+            if (params.action === 'get_context') {
+              try {
+                const result = await callBrainSurgeonApi(
+                  cfg.apiUrl, 
+                  'GET', 
+                  `/api/sessions/${agentId}/${params.session}`
+                );
+                
+                const entries = result.entries || [];
+                const extracted = entries.filter((e: any) => 
+                  Object.values(e).some(v => 
+                    typeof v === 'string' && v.startsWith('[[extracted-')
+                  )
+                );
+                
+                const text = `Session: ${params.session}\n` +
+                  `Total entries: ${entries.length}\n` +
+                  `Extracted entries: ${extracted.length}\n\n` +
+                  `Extracted entry IDs:\n` +
+                  (extracted.length > 0 
+                    ? extracted.map((e: any) => `  - ${e.__id || e.id || 'unknown'}`).join('\n')
+                    : '  (none)');
+                
+                return { content: [{ type: 'text', text }] };
+              } catch (err: any) {
+                return { content: [{ type: 'text', text: `Error getting context: ${err.message}` }] };
+              }
             }
 
+            // ── Action: restore ─────────────────────────────────────────
+            if (params.action === 'restore') {
+              if (!params.entry) {
+                return {
+                  content: [{ type: 'text', text: 'Error: entry parameter is required for restore action' }],
+                };
+              }
+              
+              const keysArr = params.keys?.split(',').map(k => k.trim()) || undefined;
+              
+              const result = await restoreEntry(
+                cfg.agentsDir,
+                agentId,
+                params.session,
+                params.entry,
+                keysArr,
+                log,
+              );
+
+              if (!result.success) {
+                return {
+                  content: [{ type: 'text', text: `Restore failed: ${result.error}${result.suggestion ? `\n\nSuggestion: ${result.suggestion}` : ''}` }],
+                };
+              }
+
+              let text = `Restored ${result.restoredKeys?.length || 0} keys for entry ${params.entry}\nKeys: ${result.restoredKeys?.join(', ') || 'none'}`;
+              if (result.suggestion) {
+                text += `\n\nNote: ${result.suggestion}`;
+              }
+
+              return {
+                content: [{ type: 'text', text }],
+                _consumeToolCall: !cfg.keepRestoreRemoteCalls,
+              };
+            }
+
+            // ── Action: set_extractable ───────────────────────────────────
+            if (params.action === 'set_extractable') {
+              if (!params.entry) {
+                return {
+                  content: [{ type: 'text', text: 'Error: entry parameter is required for set_extractable action' }],
+                };
+              }
+              if (!params.value) {
+                return {
+                  content: [{ type: 'text', text: 'Error: value parameter is required for set_extractable action (true, false, or integer)' }],
+                };
+              }
+              
+              // Parse value
+              let extractableValue: boolean | number;
+              const val = params.value.toLowerCase();
+              if (val === 'true') {
+                extractableValue = true;
+              } else if (val === 'false') {
+                extractableValue = false;
+              } else {
+                const num = parseInt(params.value, 10);
+                if (isNaN(num)) {
+                  return {
+                    content: [{ type: 'text', text: `Error: value must be 'true', 'false', or integer, got: ${params.value}` }],
+                  };
+                }
+                extractableValue = num;
+              }
+              
+              // Call API to update entry metadata
+              try {
+                await callBrainSurgeonApi(
+                  cfg.apiUrl,
+                  'PUT',
+                  `/api/sessions/${agentId}/${params.session}/entries/${params.entry}/meta`,
+                  { _extractable: extractableValue }
+                );
+                
+                return {
+                  content: [{ type: 'text', text: `Set _extractable=${extractableValue} for entry ${params.entry}` }],
+                };
+              } catch (err: any) {
+                return {
+                  content: [{ type: 'text', text: `Error setting _extractable: ${err.message}` }],
+                };
+              }
+            }
+
+            // ── Unknown action ────────────────────────────────────────────
             return {
-              content: [{ type: 'text', text }],
-              _consumeToolCall: !cfg.keepRestoreRemoteCalls,
+              content: [{ type: 'text', text: `Error: Unknown action '${params.action}'. Valid actions: get_context, restore, set_extractable` }],
             };
           },
         };
       },
-      { name: 'restore_remote' },
+      { name: 'purge_control' },
     );
 
     // ── after_tool_call hook: auto-prune trigger ──────────────────────
