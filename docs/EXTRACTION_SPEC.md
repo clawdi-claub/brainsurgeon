@@ -99,9 +99,9 @@ When the agent needs extracted content back in context:
 
 1. **Restores** the specified keys from extracted storage back to the entry
 2. **Records** restoration timestamp: `_restored: "2026-02-20T17:30:00Z"`
-3. **Redacts** the `restore` tool call to `remote_restore` placeholder
+3. **Redacts** the `purge_control` tool call to prevent cluttering context
    - Hides the restoration action from future context
-   - Redaction enabled by default (config: `keep_restore_remote_calls`)
+   - Redaction enabled by default (config: `keep_restore_calls`)
 4. **Protects** restored value from re-extraction for `keep_after_restore_seconds` (default: 10 minutes)
 
 ### 3. Time-Based Re-extraction Protection
@@ -145,13 +145,13 @@ After restoration and redaction:
 ```json
 {
   "type": "tool_call",
-  "name": "remote_restore",
-  "arguments": null,
-  "_redacted_from": "restore"
+  "name": "purge_control",
+  "arguments": {"action": "restore", "entry": "msg-456"},
+  "_redacted": true
 }
 ```
 
-The actual `restore` call is replaced with `remote_restore` to prevent the agent from learning the restoration pattern.
+The actual `purge_control` call is marked with `_redacted` to prevent cluttering context.
 
 ---
 
@@ -189,7 +189,7 @@ session: "agent-id/session-id"
 Agents using BrainSurgeon extraction need to be instructed on:
 
 1. **What gets extracted:** Large tool results/thinking blocks older than `keep_recent` messages
-2. **When to restore:** Call `restore_remote` when you need content that was previously extracted
+2. **When to restore:** Call `purge_control` with action `restore` when you need content that was previously extracted
 3. **Restoration behavior:** Restored values will be re-extracted after `keep_recent` more messages
 4. **Skill protection:** Important context can be marked `_extractable: false` to stay in memory
 
@@ -204,7 +204,7 @@ Agents using BrainSurgeon extraction need to be instructed on:
 | `_extractable` override | ✅ `true/false/int` | ✅ Implemented | Force, prevent, or custom keep window |
 | Placeholder format | `[[extracted-${entryId}]]` | ⚠️ **TODO** | Currently `[[extracted]]` — needs entry ID |
 | `restore` tool | ✅ Full mechanism | ⚠️ **TODO** | Needs agent-callable tool, not just REST API |
-| `remote_restore` redaction | ✅ Enabled by default | ✅ Implemented | `keep_restore_remote_calls: false` |
+| `purge_control` redaction | ✅ Enabled by default | ✅ Implemented | `keep_purge_control_calls: false` |
 | Time-based restore protection | `_restored` + `keep_after_restore_seconds` | ⚠️ **TODO** | Currently position-based, needs time-based |
 | Re-restore guidance | Suggest `_extractable: false` | ⚠️ **TODO** | Needs detection logic + response field |
 | Value size logging | ✅ Per-key sizes | ✅ Implemented | `sizesBytes` in extraction + restore results |
@@ -224,7 +224,7 @@ interface SmartPruningConfig {
   retention: string;                   // default: '24h'
   
   // Restore/Redaction
-  keep_restore_remote_calls: boolean;  // default: false (redact by default)
+  keep_purge_control_calls: boolean;  // default: false (redact by default)
   keep_after_restore_seconds: number;  // default: 600 (10 minutes)
   
   // Cron schedules

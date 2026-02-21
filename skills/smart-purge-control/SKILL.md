@@ -53,7 +53,18 @@ Example of an extracted entry:
 
 ## Restoring Extracted Content
 
-When you need extracted content back, use the `restore_remote` tool (if available) or call the BrainSurgeon API directly:
+When you need extracted content back, use the `purge_control` tool with action `restore`:
+
+```json
+{
+  "action": "restore",
+  "session": "direct:123",
+  "entry": "msg-456",
+  "keys": "content,output"
+}
+```
+
+Or call the BrainSurgeon API directly:
 
 ```
 POST http://localhost:8000/api/sessions/{agentId}/{sessionId}/entries/{entryId}/restore
@@ -62,18 +73,16 @@ POST http://localhost:8000/api/sessions/{agentId}/{sessionId}/entries/{entryId}/
 Request body (optional):
 ```json
 {
-  "keys": ["content", "output"],
-  "toolCallEntryId": "id-of-restore-tool-call"
+  "keys": ["content", "output"]
 }
 ```
 
 - `keys` — restore specific keys only (omit to restore all)
-- `toolCallEntryId` — if this restore was triggered by a `restore_remote` tool call, pass that call's entry ID here to redact it
 
 ### What Happens on Restore
 
 1. Original values are written back to the session entry
-2. The `restore_remote` tool call is redacted to `remote_restore` (hides the restoration from future context)
+2. The `purge_control` tool call is redacted to prevent cluttering context
 3. The restored entry is **protected from re-extraction** for `keep_recent` messages
 
 ### Re-extraction Protection

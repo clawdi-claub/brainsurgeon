@@ -127,7 +127,7 @@ BrainSurgeon extracts large content from session files to keep OpenClaw's contex
 - Keep the most recent `keep_recent` messages in context
 - Extract everything older than that to separate files
 - Extracted values are replaced with `[[extracted]]` placeholders
-- Agent can restore values on-demand via the `restore_remote` tool
+- Agent can restore values on-demand via the `purge_control` tool
 - Skill content and important context can be protected with `_extractable` metadata
 
 | Variable | Default | Description |
@@ -155,8 +155,8 @@ Example: Protect skill content from extraction
 ```
 
 **Restore Mechanism:**
-1. Agent calls `restore_remote` when it needs extracted content
-2. System restores the value and redacts the tool call to `remote_restore` placeholder
+1. Agent calls `purge_control` with action `restore` when it needs extracted content
+2. System restores the value and redacts the tool call to prevent cluttering context
 3. Restored value is protected from re-extraction for `keep_recent` messages
 
 Configure via the web UI (⚙️ Settings button) or API:
