@@ -1,4 +1,3 @@
-import { Type } from '@sinclair/typebox';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
@@ -221,11 +220,15 @@ const plugin = {
         return {
           name: 'restore_remote',
           description: 'Restore extracted content from external storage into the session. Use when you see [[extracted-...]] placeholders.',
-          parameters: Type.Object({
-            session: Type.String({ description: 'Session ID containing the extracted entry' }),
-            entry: Type.String({ description: 'Entry ID (the __id or id field) of the entry with extracted content' }),
-            keys: Type.Optional(Type.String({ description: 'Comma-separated list of specific keys to restore (default: all)' })),
-          }),
+          parameters: {
+            type: 'object',
+            required: ['session', 'entry'],
+            properties: {
+              session: { type: 'string', description: 'Session ID containing the extracted entry' },
+              entry: { type: 'string', description: 'Entry ID (the __id or id field) of the entry with extracted content' },
+              keys: { type: 'string', description: 'Comma-separated list of specific keys to restore (default: all)' },
+            },
+          },
           async execute(_toolCallId: string, params: { session: string; entry: string; keys?: string }) {
             const agentId = ctx.agentId!;
             const keysArr = params.keys?.split(',').map(k => k.trim()) || undefined;
