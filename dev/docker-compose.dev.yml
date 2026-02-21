@@ -47,9 +47,10 @@ services:
     ports:
       - "28000:8000"
     volumes:
-      - ../ts-api/src:/app/src
-      # ./data is mounted RW; keep AGENTS_DIR inside it RW for meta updates/pruning
-      - ./data:/data
+      - ../ts-api/src:/app/src:ro
+      # Agents dir needs RW for lock files, meta updates, and pruning
+      - ./data/agents:/data/agents:rw
+      - ./data:/data:rw
     environment:
       - PORT=8000
       - AGENTS_DIR=/data/agents
