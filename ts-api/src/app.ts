@@ -270,7 +270,9 @@ app.get('/styles.css', c => serveStatic('styles.css'));
 
 // Public endpoint: auth status (BEFORE protected API routes)
 // This endpoint is intentionally OUTSIDE the auth middleware
-app.get('/api/auth-info', (c) => c.json({ auth_required: API_KEYS.length > 0 }));
+// Note: When behind nginx with 'proxy_pass http://api/;', the path is /auth-info
+// (nginx strips the /api/ prefix). So we mount at root level here.
+app.get('/auth-info', (c) => c.json({ auth_required: API_KEYS.length > 0 }));
 
 // Mount API (with middleware) - AFTER public endpoints
 app.route('/api', apiAppWithMiddleware);
