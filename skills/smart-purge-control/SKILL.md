@@ -13,7 +13,7 @@ BrainSurgeon automatically extracts large content from older messages to keep se
 - Only messages **older than the most recent `keep_recent`** (default: 3) are candidates
 - Only `tool_call` and `tool_result` types are extracted by default
 - Only values **longer than `min_value_length`** (default: 500 chars) are extracted
-- Extracted values are replaced with `[[extracted]]` placeholders
+- Extracted values are replaced with `[[extracted-${entryId}]]` placeholders (e.g. `[[extracted-msg-456]]`)
 
 ## The `_extractable` Field
 
@@ -44,19 +44,19 @@ Set `_extractable` on any message entry to override default behavior.
 
 ## Recognizing Extracted Content
 
-When you see `[[extracted]]` in a message value, the original content was extracted to storage. The entry's `__id` (or `id`) is preserved for cross-reference.
+When you see `[[extracted-<entryId>]]` in a message value, the original content was extracted to storage. The entry ID is embedded in the placeholder for easy identification.
 
 Example of an extracted entry:
 ```json
-{"__id": "msg-456", "type": "tool_result", "output": "[[extracted]]"}
+{"id": "msg-456", "type": "tool_result", "output": "[[extracted-msg-456]]"}
 ```
 
 ## Restoring Extracted Content
 
-When you need extracted content back, call the BrainSurgeon restore endpoint:
+When you need extracted content back, use the `restore_remote` tool (if available) or call the BrainSurgeon API directly:
 
 ```
-POST /api/sessions/{agentId}/{sessionId}/entries/{entryId}/restore
+POST http://localhost:8000/api/sessions/{agentId}/{sessionId}/entries/{entryId}/restore
 ```
 
 Request body (optional):
@@ -100,9 +100,7 @@ purge_control set_extractable msg-abc123 10 --agent crix-claub --session direct:
 
 ## Re-restore Detection
 
-**If you see `[[already-restored]]` instead of `[[extracted]]`:**
-
-This means the content was previously restored and you're trying to restore it again. The content is already in your context — look for the entry with the same ID nearby.
+If you restore content that was already restored, the API will indicate this. The content is already in your context — look for the entry with the same ID nearby.
 
 **Prevention:** After restoring content, if you want to ensure it stays available, mark it `_extractable: false`:
 ```bash
@@ -114,5 +112,5 @@ purge_control set_extractable <entry-id> false --agent <agent> --session <sessio
 1. **Skill files**: When loading skill content into context, mark it `_extractable: false` so the agent retains access to instructions
 2. **Active work files**: Use `_extractable: <N>` with a reasonable N (5–10) for files you're actively editing
 3. **One-off lookups**: Let default extraction handle these — they'll be cleaned up automatically
-4. **If you see `[[extracted]]` and need the content**: Call the restore endpoint with the entry's `__id`
+4. **If you see `[[extracted-<id>]]` and need the content**: Call the restore endpoint with the entry ID from the placeholder
 5. **Don't call restore speculatively** — only restore when you actually need the content for your current task
