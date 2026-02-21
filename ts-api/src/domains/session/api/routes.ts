@@ -13,6 +13,30 @@ import { createLogger } from '../../../shared/logging/logger.js';
 
 const log = createLogger('session-routes');
 
+// Helper to resolve sessionKey to sessionId
+async function resolveSessionKey(
+  sessionService: SessionService,
+  agentId: string,
+  sessionKeyOrId: string
+): Promise<string | null> {
+  // If it's already a valid session ID file, return as-is
+  if (/^[a-f0-9-]{36}$/.test(sessionKeyOrId)) {
+    return sessionKeyOrId;
+  }
+  
+  // Otherwise look up in sessions list
+  try {
+    const sessions = await sessionService.listSessions(agentId);
+    const match = sessions.find(s => 
+      s.id === sessionKeyOrId || 
+      s.label?.includes(sessionKeyOrId)
+    );
+    return match?.id || null;
+  } catch {
+    return null;
+  }
+}
+
 export function createSessionRoutes(
   sessionService: SessionService,
   pruneService: PruneService,
@@ -377,7 +401,18 @@ export function createSessionRoutes(
   // GET /sessions/:agent/:id/context — Get context stats and extraction status
   app.get('/:agent/:id/context', async (c) => {
     const agentId = sanitizeId(c.req.param('agent'), 'agent');
-    const sessionId = sanitizeId(c.req.param('id'), 'session_id');
+    const rawId = c.req.param('id');
+    
+    // Try to resolve sessionKey to sessionId
+    let sessionId = await resolveSessionKey(sessionService, agentId, rawId);
+    if (!sessionId) {
+      // Try as direct session ID
+      try {
+        sessionId = sanitizeId(rawId, 'session_id');
+      } catch {
+        return c.json({ error: `Session not found: ${rawId}` }, 404);
+      }
+    }
 
     try {
       const session = await sessionService.getSession(agentId, sessionId);
@@ -435,7 +470,18 @@ export function createSessionRoutes(
   // PUT /sessions/:agent/:id/entries/:entryId/meta — Update entry metadata
   app.put('/:agent/:id/entries/:entryId/meta', async (c) => {
     const agentId = sanitizeId(c.req.param('agent'), 'agent');
-    const sessionId = sanitizeId(c.req.param('id'), 'session_id');
+    const rawId = c.req.param('id');
+    
+    // Try to resolve sessionKey to sessionId
+    let sessionId = await resolveSessionKey(sessionService, agentId, rawId);
+    if (!sessionId) {
+      try {
+        sessionId = sanitizeId(rawId, 'session_id');
+      } catch {
+        return c.json({ error: `Session not found: ${rawId}` }, 404);
+      }
+    }
+    
     const entryId = sanitizeId(c.req.param('entryId'), 'entry');
     const body = await c.req.json().catch(() => ({}));
 
