@@ -269,15 +269,15 @@ app.get('/app.js', c => serveStatic('app.js'));
 app.get('/styles.css', c => serveStatic('styles.css'));
 
 // Public endpoint: auth status (BEFORE protected API routes)
-// This endpoint is intentionally OUTSIDE the auth middleware
-// Note: When behind nginx with 'proxy_pass http://api/;', the path is /auth-info
-// (nginx strips the /api/ prefix). So we mount at root level here.
+// This endpoint is intentionally OUTSIDE the auth middleware.
+// The Web UI calls GET /api/auth-info on load.
+app.get('/api/auth-info', (c) => c.json({ auth_required: API_KEYS.length > 0 }));
+
+// Optional convenience alias (humans can hit /auth-info in the browser)
 app.get('/auth-info', (c) => c.json({ auth_required: API_KEYS.length > 0 }));
 
 // Mount API (with middleware) - AFTER public endpoints
 app.route('/api', apiAppWithMiddleware);
-// Also mount at root for direct access (with middleware)
-app.route('/', apiAppWithMiddleware);
 
 // Start message bus, cron service, and server
 async function main() {

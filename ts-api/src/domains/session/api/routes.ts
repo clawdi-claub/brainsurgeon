@@ -374,6 +374,118 @@ export function createSessionRoutes(
     }
   });
 
+  // GET /sessions/:agent/:id/context — Get context stats and extraction status
+  app.get('/:agent/:id/context', async (c) => {
+    const agentId = sanitizeId(c.req.param('agent'), 'agent');
+    const sessionId = sanitizeId(c.req.param('id'), 'session_id');
+
+    try {
+      const session = await sessionService.getSession(agentId, sessionId);
+      const entries = session.entries;
+      
+      // Calculate stats
+      const totalEntries = entries.length;
+      const extractedEntries = entries.filter(e => e._extracted === true).length;
+      const extractedIds = entries.filter(e => e._extracted === true).map(e => e.id);
+      const extractableEntries = entries.filter(e => e._extractable !== false).length;
+      
+      // Calculate sizes
+      const sizeBytes = entries.reduce((sum, e) => sum + JSON.stringify(e).length, 0);
+      const extractedSizeBytes = entries
+        .filter(e => e._extracted === true)
+        .reduce((sum, e) => sum + JSON.stringify(e).length, 0);
+      
+      // Get last extraction timestamp
+      const lastExtractedAt = entries
+        .filter(e => e._extractedAt)
+        .map(e => e._extractedAt)
+        .sort()
+        .pop();
+
+      // Build entry details
+      const entryDetails = entries.map((e, index) => ({
+        index,
+        id: e.id,
+        type: e.type,
+        extractable: e._extractable ?? true,
+        extracted: e._extracted === true,
+        sizeBytes: JSON.stringify(e).length,
+      }));
+
+      return c.json({
+        sessionId,
+        agentId,
+        totalEntries,
+        extractedEntries,
+        extractedIds,
+        extractableEntries,
+        sizeBytes,
+        extractedSizeBytes,
+        lastExtractedAt,
+        entries: entryDetails,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'NotFoundError') {
+        return c.json({ error: error.message }, 404);
+      }
+      throw error;
+    }
+  });
+
+  // PUT /sessions/:agent/:id/entries/:entryId/meta — Update entry metadata
+  app.put('/:agent/:id/entries/:entryId/meta', async (c) => {
+    const agentId = sanitizeId(c.req.param('agent'), 'agent');
+    const sessionId = sanitizeId(c.req.param('id'), 'session_id');
+    const entryId = sanitizeId(c.req.param('entryId'), 'entry');
+    const body = await c.req.json().catch(() => ({}));
+
+    const allowedFields = ['_extractable'];
+    const updates: Record<string, unknown> = {};
+    const previous: Record<string, unknown> = {};
+    const fields: string[] = [];
+
+    auditLog('update_entry_meta', agentId, sessionId, c.req.header('X-API-Key'), { 
+      entryId, 
+      fields: Object.keys(body) 
+    });
+
+    try {
+      // Get current entry to capture previous values
+      const session = await sessionService.getSession(agentId, sessionId);
+      const entry = session.entries.find(e => e.id === entryId);
+      if (!entry) {
+        return c.json({ error: `Entry ${entryId} not found` }, 404);
+      }
+
+      // Extract allowed updates
+      for (const field of allowedFields) {
+        if (field in body) {
+          updates[field] = body[field];
+          previous[field] = entry[field as keyof typeof entry];
+          fields.push(field);
+        }
+      }
+
+      if (fields.length === 0) {
+        return c.json({ error: 'No valid fields to update. Allowed: _extractable' }, 400);
+      }
+
+      await sessionService.editEntry(agentId, sessionId, entryId, updates);
+
+      return c.json({
+        updated: true,
+        entryId,
+        fields,
+        previous,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'NotFoundError') {
+        return c.json({ error: error.message }, 404);
+      }
+      throw error;
+    }
+  });
+
   // PUT /sessions/:agent/:id/entries/:index (Python API parity)
   app.put('/:agent/:id/entries/:index', async (c) => {
     const agentId = sanitizeId(c.req.param('agent'), 'agent');
