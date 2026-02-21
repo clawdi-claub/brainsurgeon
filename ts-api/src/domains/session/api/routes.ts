@@ -27,9 +27,10 @@ async function resolveSessionKey(
   // Otherwise look up in sessions list
   try {
     const sessions = await sessionService.listSessions(agentId);
-    const match = sessions.find(s => 
-      s.id === sessionKeyOrId || 
-      s.label?.includes(sessionKeyOrId)
+    const match = sessions.find((s) =>
+      s.id === sessionKeyOrId ||
+      s.title === sessionKeyOrId ||
+      (s.title?.includes(sessionKeyOrId) ?? false)
     );
     return match?.id || null;
   } catch {

@@ -39,3 +39,6 @@ screenshots/frames/
 
 # Dev test data
 dev/data/
+
+# Dev runtime state (may be root-owned from Docker)
+dev/openclaw-state/
