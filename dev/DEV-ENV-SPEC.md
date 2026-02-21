@@ -317,6 +317,54 @@ Wipes all dev data and restarts fresh. Useful when:
 
 ---
 
+## Smoke test: restore_remote (end-to-end)
+
+This verifies the **BrainSurgeon OpenClaw extension** loads correctly and can restore extracted content back into a session file.
+
+### 1) Create a dummy session entry + extracted payload
+
+```bash
+AGENTS=~/projects/brainsurgeon/dev/data/agents
+AG=test-agent-1
+SID=dev-restore-smoke
+EID=e1
+
+mkdir -p "$AGENTS/$AG/sessions/extracted/$SID"
+
+cat > "$AGENTS/$AG/sessions/$SID.jsonl" <<'EOF'
+{"__id":"e1","id":"e1","type":"assistant_message","payload":{"answer":"[[extracted]]","notes":"keep"}}
+EOF
+
+cat > "$AGENTS/$AG/sessions/extracted/$SID/$EID.jsonl" <<'EOF'
+{"payload":{"answer":"RESTORED_OK"}}
+EOF
+```
+
+### 2) Invoke the tool through the Gateway HTTP API
+
+```bash
+curl -sS http://127.0.0.1:28789/tools/invoke \
+  -H 'Authorization: Bearer dev_gateway_token_please_change' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "tool":"restore_remote",
+    "sessionKey":"agent:test-agent-1:main",
+    "args": {"session":"dev-restore-smoke","entry":"e1"}
+  }'
+```
+
+Expected: `ok:true` and message like “Restored 1 keys… payload.answer”.
+
+### 3) Verify session file got patched
+
+```bash
+cat "$AGENTS/$AG/sessions/$SID.jsonl"
+```
+
+Expected: `payload.answer` is no longer a placeholder and `_restored`/`__restored_keys` are present.
+
+---
+
 ## Test Checklist Before Production Deploy
 
 - [ ] Extension loads without crashing gateway

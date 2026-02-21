@@ -1,65 +1,37 @@
 {
+  "logging": {
+    "level": "debug"
+  },
   "gateway": {
     "port": 18789,
-    "host": "0.0.0.0",
-    "sessionTimeoutMinutes": 60
-  },
-  "canvas": {
-    "port": 18793,
-    "host": "0.0.0.0",
-    "enabled": true
-  },
-  "agents": {
-    "directory": "/app/agents",
-    "defaultModel": "or-gemini"
-  },
-  "features": {
-    "extractedContent": {
-      "directory": "/app/extracted"
+    "mode": "local",
+    "bind": "lan",
+    "auth": {
+      "mode": "token",
+      "token": "dev_gateway_token_please_change"
     }
   },
-  "logging": {
-    "level": "debug",
-    "file": "/app/logs/openclaw.log",
-    "console": true,
-    "consoleLevel": "debug"
-  },
   "plugins": {
-    "enabled": true,
     "allow": ["brainsurgeon"],
     "entries": {
       "brainsurgeon": {
         "enabled": true,
         "config": {
-          "agentsDir": "/app/agents",
+          "agentsDir": "/root/.openclaw/agents",
           "apiUrl": "http://brainsurgeon-api-dev:8000",
-          "enableAutoPrune": true,
+          "enableAutoPrune": false,
           "autoPruneThreshold": 3,
           "keepRestoreRemoteCalls": false,
-          "busDbPath": "/data/bus.db"
+          "busDbPath": "/root/.openclaw/brainsurgeon/bus.db"
         }
       }
     }
   },
-  "models": {
-    "providers": {
-      "openrouter": {
-        "api": "openai-completions",
-        "baseUrl": "https://openrouter.ai/api/v1",
-        "apiKey": "${OPENROUTER_API_KEY:-dev_key}",
-        "models": [
-          {
-            "id": "google/gemini-2.0-flash-001",
-            "name": "Gemini Flash Dev",
-            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
-            "contextWindow": 128000,
-            "maxTokens": 4096
-          }
-        ]
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "ollama/kimi-k2.5:cloud"
       }
     }
-  },
-  "auth": {
-    "profiles": {}
   }
 }

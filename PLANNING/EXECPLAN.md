@@ -157,6 +157,86 @@ As an OpenClaw tool, this translates to:
 
 ### Gap 1: Extension Tool Implementation
 
+### Gap 1.5: Missing API Endpoint Specifications
+
+The `purge_control` tool requires three API endpoints, but only one exists:
+
+| Action | Required Endpoint | Status | Notes |
+|--------|-------------------|--------|-------|
+| `get_context` | `GET /sessions/:agent/:id/context` | ❌ Missing | Returns context stats, extracted entries, session metadata |
+| `restore` | `POST /sessions/:agent/:id/entries/:entryId/restore` | ✅ Exists | Already implemented in routes.ts (line ~280) |
+| `set_extractable` | `PUT /sessions/:agent/:id/entries/:entryId/meta` | ❌ Missing | Updates entry metadata (specifically `_extractable`) |
+
+**Required New Endpoints:**
+
+#### GET /sessions/:agent/:id/context
+
+Returns context statistics and extraction status for a session:
+
+```typescript
+// Response
+{
+  sessionId: string;
+  agentId: string;
+  totalEntries: number;
+  extractedEntries: number;
+  extractedIds: string[];
+  extractableEntries: number;  // entries not marked never-extract
+  sizeBytes: number;
+  extractedSizeBytes: number;
+  lastExtractedAt?: string;
+  entries: Array<{
+    index: number;
+    id: string;
+    type: string;
+    extractable: boolean | number;
+    extracted: boolean;
+    sizeBytes: number;
+  }>;
+}
+```
+
+#### PUT /sessions/:agent/:id/entries/:entryId/meta
+
+Updates metadata fields on a specific entry:
+
+```typescript
+// Request body
+{
+  _extractable?: boolean | number;  // true/false or keep window size
+  [key: string]: any;  // extensible for other metadata
+}
+
+// Response
+{
+  updated: true;
+  entryId: string;
+  fields: string[];  // which fields were updated
+  previous: {        // previous values
+    _extractable?: boolean | number;
+  };
+}
+```
+
+**Additional Requirement: SessionKey Resolution**
+
+All endpoints must accept an optional `?sessionKey=` query parameter:
+- Extension receives `sessionKey` (e.g., `agent:crix-claub:direct:123`)
+- API must resolve this to `agentId` + `sessionId` internally
+- Resolution logic: parse `agent:{agentId}:{kind}:{label}` → find matching session file
+
+**Example:**
+```
+GET /sessions/_/test-session/context?sessionKey=agent:crix-claub:direct:123
+```
+
+The API should:
+1. Check if `sessionKey` param exists
+2. If yes, resolve to actual `agentId`/`sessionId` 
+3. If resolution fails, return 404 with helpful error
+
+### Gap 1: Extension Tool Implementation
+
 The extension currently implements `restore_remote` as a single-purpose tool. It must be replaced with `purge_control` supporting three actions.
 
 **Current code (index.ts lines 175-230):**

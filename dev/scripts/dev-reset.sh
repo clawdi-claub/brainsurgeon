@@ -24,7 +24,7 @@ fi
 echo ""
 echo "🛑 Stopping containers..."
 cd "$DEV_DIR"
-docker-compose -f docker-compose.dev.yml down 2>/dev/null || true
+docker compose -f docker-compose.dev.yml down 2>/dev/null || true
 
 echo ""
 echo "🗑️  Removing dev data..."
@@ -35,11 +35,11 @@ rm -f "$DEV_DIR/data/bus.db"
 
 echo ""
 echo "🏗️  Rebuilding containers..."
-docker-compose -f docker-compose.dev.yml build --no-cache
+docker compose -f docker-compose.dev.yml build --no-cache
 
 echo ""
 echo "🚀 Starting fresh environment..."
-docker-compose -f docker-compose.dev.yml up -d
+docker compose -f docker-compose.dev.yml up -d
 
 echo ""
 echo "⏳ Waiting for services..."

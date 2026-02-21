@@ -11,20 +11,20 @@ services:
       dockerfile: Dockerfile.gateway
     container_name: openclaw-gateway-dev
     ports:
-      - "28789:18789"  # Gateway API
-      - "28793:18793"  # Canvas
+      - "127.0.0.1:28789:18789"  # Gateway API
+      - "127.0.0.1:28793:18793"  # Canvas
     volumes:
-      - ./data/agents:/app/agents
-      - ./data/extracted:/app/extracted
-      - ./logs:/app/logs
-      # Mount extensions for hot-reload (changes reflected without rebuild)
-      - ../../extensions:/app/extensions:ro
-      # Mount config for quick iteration
-      - ./config/openclaw.dev.json:/app/config.json:ro
+      # Share agents dir with BrainSurgeon API (and persist dev sessions)
+      - ./data/agents:/root/.openclaw/agents
+      # Optional: persist BrainSurgeon bus/db for the plugin
+      - ./data/brainsurgeon:/root/.openclaw/brainsurgeon
+      # Optional: gateway logs
+      - ./logs:/root/.openclaw/logs
+      # Extension is baked into the image (owned by root)
     environment:
       - NODE_ENV=development
       - LOG_LEVEL=debug
-      - OPENCLAW_CONFIG_PATH=/app/config.json
+      - OPENCLAW_CONFIG_PATH=/root/.openclaw/config.json
       # Optional: pass through API keys from host env
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
     networks:
@@ -56,11 +56,8 @@ services:
       - DATA_DIR=/data
       - LOG_LEVEL=debug
       - BRAINSURGEON_API_KEYS=dev_key_insecure_do_not_use_in_prod
-      # Gateway URL optional - will show warning if not available
-      # - GATEWAY_URL=http://gateway-dev:18789
     networks:
       - brainsurgeon-dev
-    # No dependency on gateway - can run standalone
     restart: unless-stopped
 
   # BrainSurgeon WebUI (Static + Proxy)
@@ -82,3 +79,4 @@ networks:
   brainsurgeon-dev:
     driver: bridge
     name: brainsurgeon-dev
+

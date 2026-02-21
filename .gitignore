@@ -36,3 +36,6 @@ screenshots/frames/
 
 # Tmp
 .tmp/
+
+# Dev test data
+dev/data/

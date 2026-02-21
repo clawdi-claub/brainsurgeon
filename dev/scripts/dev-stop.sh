@@ -12,7 +12,7 @@ echo ""
 cd "$DEV_DIR"
 
 if [ -f "docker-compose.dev.yml" ]; then
-    docker-compose -f docker-compose.dev.yml down
+    docker compose -f docker-compose.dev.yml down
     echo ""
     echo "✅ Dev environment stopped"
 else

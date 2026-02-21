@@ -1,17 +1,20 @@
 # OpenClaw Gateway - Development Build
 # Based on the npm-installed openclaw CLI
 
-FROM node:22-alpine
+FROM node:22-bookworm-slim
 
-# Install system dependencies
-RUN apk add --no-cache \
+# Install system dependencies (Debian)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     curl \
     wget \
     git \
     bash \
     python3 \
     make \
-    g++
+    g++ \
+    cmake \
+  && rm -rf /var/lib/apt/lists/*
 
 # Install OpenClaw CLI globally
 RUN npm install -g openclaw
@@ -23,6 +26,15 @@ RUN mkdir -p /app/agents /app/extracted /app/logs /app/extensions
 # Copy dev config
 COPY config/openclaw.dev.json /app/config.json
 
+# Copy config file
+COPY config/openclaw.dev.json /root/.openclaw/config.json
+
+# Copy extension (will be owned by root)
+COPY ./brainsurgeon /root/.openclaw/extensions/brainsurgeon
+
+# Fix ownership of mounted extensions
+RUN chown -R root:root /root/.openclaw/extensions
+
 # Create entrypoint script
 RUN cat > /app/entrypoint.sh << 'EOF'
 #!/bin/sh
@@ -31,29 +43,18 @@ set -e
 # Set environment
 export NODE_ENV=development
 export LOG_LEVEL=debug
-export OPENCLAW_CONFIG_PATH=/app/config.json
+export OPENCLAW_CONFIG_PATH=/root/.openclaw/config.json
+export OPENCLAW_STATE_DIR=/root/.openclaw
 
 # Ensure data directories exist
-mkdir -p /app/agents /app/extracted /app/logs
-
-# Link extensions to the right place (OpenClaw looks in specific locations)
-mkdir -p ~/.openclaw/extensions
-for ext in /app/extensions/*/; do
-    if [ -d "$ext" ]; then
-        ext_name=$(basename "$ext")
-        echo "Linking extension: $ext_name"
-        rm -f ~/.openclaw/extensions/$ext_name
-        ln -s "$ext" ~/.openclaw/extensions/$ext_name
-    fi
-done
+mkdir -p /root/.openclaw/agents /root/.openclaw/extensions /root/.openclaw/brainsurgeon /root/.openclaw/logs
 
 echo "Starting OpenClaw Gateway on port 18789..."
 echo "Config: $OPENCLAW_CONFIG_PATH"
-echo "Agents: /app/agents"
-echo "Extensions: ~/.openclaw/extensions"
 
 # Start the gateway
-exec openclaw gateway --port 18789
+# NOTE: --bind lan is required in Docker so the port is reachable via NAT (0.0.0.0 instead of 127.0.0.1)
+exec openclaw gateway run --port 18789 --bind lan --allow-unconfigured
 EOF
 
 RUN chmod +x /app/entrypoint.sh

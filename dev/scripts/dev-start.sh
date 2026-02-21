@@ -81,7 +81,7 @@ echo "🐳 Building and starting dev environment..."
 echo ""
 
 cd "$DEV_DIR"
-docker-compose -f docker-compose.dev.yml up --build -d
+docker compose -f docker-compose.dev.yml up --build -d
 
 echo ""
 echo "⏳ Waiting for services to be healthy..."
@@ -122,7 +122,7 @@ echo "   BrainSurgeon API:  http://localhost:28000"
 echo "   BrainSurgeon Web:  http://localhost:28080"
 echo ""
 echo "🔧 Useful commands:"
-echo "   View logs:  docker-compose -f docker-compose.dev.yml logs -f"
+echo "   View logs:  docker compose -f docker-compose.dev.yml logs -f"
 echo "   Stop:       $SCRIPT_DIR/dev-stop.sh"
 echo "   Reset:      $SCRIPT_DIR/dev-reset.sh"
 echo ""

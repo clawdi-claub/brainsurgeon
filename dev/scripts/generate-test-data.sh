@@ -28,25 +28,31 @@ generate_entry_id() {
 
 # Generate a timestamp
 generate_timestamp() {
-    local offset=$1
-    date -d "$offset minutes ago" -Iseconds 2>/dev/null || date -v-${offset}M -Iseconds 2>/dev/null || echo "2026-02-21T$((10 + RANDOM % 10)):$((RANDOM % 60)):$((RANDOM % 60))Z"
+    date -Iseconds 2>/dev/null || echo "2026-02-21T10:00:00Z"
 }
 
 # Create test agent
 create_test_agent() {
-    local agent_dir="$AGENTS_DIR/test-agent-$1/sessions"
+    local agent_num=$1
+    local agent_dir="$AGENTS_DIR/test-agent-$agent_num/sessions"
     mkdir -p "$agent_dir"
+    
+    # Use temp file for sessions.json
+    local sessions_json="$agent_dir/sessions.json"
+    echo "{" > "$sessions_json"
+    
+    local first_session=true
     
     for s in $(seq 1 $SESSIONS_PER_AGENT); do
         local session_id=$(generate_session_id)
         local session_file="$agent_dir/${session_id}.jsonl"
         
-        echo "📝 Creating session: test-agent-$1 / $session_id"
+        echo "📝 Creating session: test-agent-$agent_num / $session_id"
         
         # Generate entries for this session
         for e in $(seq 1 $ENTRIES_PER_SESSION); do
             local entry_id=$(generate_entry_id)
-            local timestamp=$(generate_timestamp $((s * 100 + e)))
+            local timestamp=$(generate_timestamp)
             local entry_type="user_message"
             
             # Alternate entry types
@@ -57,37 +63,51 @@ create_test_agent() {
                 3) entry_type="tool_result" ;;
             esac
             
-            # Create entry JSON
+            # Create entry JSON (compact, one per line)
             case $entry_type in
                 user_message)
-                    cat >> "$session_file" << EOF
-{"__id":"$entry_id","id":"msg-$entry_id","sessionId":"$session_id","type":"user_message","text":"This is test message $e from test agent $1 session $s","timestamp":"$timestamp","channel":"telegram","senderId":"6377178111"}
-EOF
+                    printf '{"__id":"%s","id":"msg-%s","sessionId":"%s","type":"user_message","text":"Test message %d from agent %d session %d","timestamp":"%s","channel":"telegram","senderId":"6377178111"}\n' "$entry_id" "$entry_id" "$session_id" "$e" "$agent_num" "$s" "$timestamp" >> "$session_file"
                     ;;
                 assistant_message)
-                    cat >> "$session_file" << EOF
-{"__id":"$entry_id","id":"msg-$entry_id","sessionId":"$session_id","type":"assistant_message","text":"This is assistant response $e for test agent $1 session $s. Here is some thinking: $(printf 'x%.0s' {1..500})","timestamp":"$timestamp","model":"kimi-k2.5"}
-EOF
+                    printf '{"__id":"%s","id":"msg-%s","sessionId":"%s","type":"assistant_message","text":"Response %d from agent %d. Here is some thinking: ","timestamp":"%s","model":"kimi-k2.5"}\n' "$entry_id" "$entry_id" "$session_id" "$e" "$agent_num" "$timestamp" >> "$session_file"
                     ;;
                 tool_call)
-                    cat >> "$session_file" << EOF
-{"__id":"$entry_id","id":"tc-$entry_id","sessionId":"$session_id","type":"tool_call","toolName":"exec","timestamp":"$timestamp","input":{"command":"ls -la ~/","timeout":30}}
-EOF
+                    printf '{"__id":"%s","id":"tc-%s","sessionId":"%s","type":"tool_call","toolName":"exec","timestamp":"%s","input":{"command":"ls -la ~/","timeout":30}}\n' "$entry_id" "$entry_id" "$session_id" "$timestamp" >> "$session_file"
                     ;;
                 tool_result)
-                    cat >> "$session_file" << EOF
-{"__id":"$entry_id","id":"tr-$entry_id","sessionId":"$session_id","type":"tool_result","toolName":"exec","timestamp":"$timestamp","output":"total 128\ndrwxr-xr-x  15 openclaw openclaw 4096 Feb 21 10:30 .\nddrwxr-xr-x  12 openclaw openclaw 4096 Feb 20 14:22 ..\n$(printf "drwxr-xr-x  3 openclaw openclaw 4096 Feb 21 %02d:%02d .\n" $((RANDOM % 24)) $((RANDOM % 60)))","success":true}
-EOF
+                    printf '{"__id":"%s","id":"tr-%s","sessionId":"%s","type":"tool_result","toolName":"exec","timestamp":"%s","output":"total 128\\ndrwxr-xr-x  15 openclaw openclaw 4096 Feb 21 10:30 .","success":true}\n' "$entry_id" "$entry_id" "$session_id" "$timestamp" >> "$session_file"
                     ;;
             esac
         done
+        
+        # Add to sessions.json
+        local now=$(date +%s)000
+        if [ "$first_session" = true ]; then
+            first_session=false
+        else
+            echo "," >> "$sessions_json"
+        fi
+        
+        cat >> "$sessions_json" << EOF
+  "test-agent-$agent_num:$session_id": {
+    "sessionId": "$session_id",
+    "updatedAt": $now,
+    "systemSent": false,
+    "abortedLastRun": false,
+    "chatType": "test",
+    "sessionFile": "$agent_dir/${session_id}.jsonl",
+    "compactionCount": 0
+  }
+EOF
     done
     
+    echo "}" >> "$sessions_json"
+    
     # Create agent metadata
-    cat > "$AGENTS_DIR/test-agent-$1/agent.json" << EOF
+    cat > "$AGENTS_DIR/test-agent-$agent_num/agent.json" << EOF
 {
-  "id": "test-agent-$1",
-  "name": "Test Agent $1",
+  "id": "test-agent-$agent_num",
+  "name": "Test Agent $agent_num",
   "created": "2026-02-01T00:00:00Z",
   "lastActive": "$(date -Iseconds)"
 }
@@ -118,5 +138,6 @@ echo ""
 echo "📂 Location: $AGENTS_DIR"
 echo ""
 echo "💡 Use this data with the dev environment:"
-echo "   AGENTS_DIR=./data/agents docker-compose -f docker-compose.dev.yml up"
+echo "   cd $DEV_DIR"
+echo "   docker compose -f docker-compose.dev.yml up -d brainsurgeon-api-dev"
 echo ""
