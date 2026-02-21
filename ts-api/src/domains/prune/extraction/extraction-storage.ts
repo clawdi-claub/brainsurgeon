@@ -64,7 +64,9 @@ export class ExtractionStorage {
     data: Record<string, unknown>,
   ): Promise<{ filePath: string; sizeBytes: number }> {
     const dir = this.extractedDir(agentId, sessionId);
-    await mkdir(dir, { recursive: true, mode: 0o700 });
+    // Mode 0o755/0o644 so host user (openclaw) can read files created by
+    // container root. The extension's restore_remote runs as openclaw on the host.
+    await mkdir(dir, { recursive: true, mode: 0o755 });
 
     const filePath = this.extractedFile(agentId, sessionId, entryId);
     const json = JSON.stringify(data, null, 2);
@@ -72,7 +74,7 @@ export class ExtractionStorage {
 
     // Atomic write: write to temp, then rename
     const tmpPath = join(dir, `.tmp-${randomUUID()}.json`);
-    await writeFile(tmpPath, json, { encoding: 'utf8', mode: 0o600 });
+    await writeFile(tmpPath, json, { encoding: 'utf8', mode: 0o644 });
     await rename(tmpPath, filePath);
 
     log.debug({ agentId, sessionId, entryId, sizeBytes }, 'stored extracted entry');
