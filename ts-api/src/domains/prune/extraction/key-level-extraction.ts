@@ -26,9 +26,23 @@ export interface ExtractionResult {
 }
 
 /**
- * Keys that are never extracted (metadata keys and identification)
+ * Keys that are never extracted (metadata, identification, and structural/linking fields)
+ * These define entry identity, relationships, and control flags — extracting them corrupts sessions.
  */
-const METADATA_KEYS = ['__id', 'id', '__ts', '__meta', '__hash', 'type', 'customType', 'timestamp'];
+const METADATA_KEYS = [
+  // Identity
+  '__id', 'id', '__ts', '__meta', '__hash', 'type', 'customType', 'timestamp',
+  // Structural/linking (parent-child relationships between entries)
+  'parentId', 'toolCallId', 'toolUseId', 'tool_call_id',
+  // Session-level
+  'version', 'cwd',
+  // Entry metadata/control flags (underscore-prefixed)
+  '_extractable', '_restored', '_pruned', '_pruned_type', '_has_tool_calls',
+  // Model/provider context
+  'modelId', 'provider', 'thinkingLevel',
+  // Compaction fields
+  'firstKeptEntryId', 'fromHook', 'tokensBefore',
+];
 
 /**
  * Keys that should always be extracted for thinking entries
@@ -148,8 +162,21 @@ function determineKeysToExtract(
   entry: SessionEntry,
   triggerType: string
 ): string[] {
-  // Never extract identification/metadata keys
-  const NEVER_EXTRACT = ['id', '__id', 'type', 'customType', 'timestamp', 'role'];
+  // Never extract identification, metadata, structural, or control keys
+  const NEVER_EXTRACT = [
+    // Identity & type
+    'id', '__id', 'type', 'customType', 'timestamp', 'role',
+    // Structural/linking
+    'parentId', 'toolCallId', 'toolUseId', 'tool_call_id',
+    // Session-level
+    'version', 'cwd',
+    // Control flags
+    '_extractable', '_restored', '_pruned', '_pruned_type', '_has_tool_calls',
+    // Model/provider context
+    'modelId', 'provider', 'thinkingLevel',
+    // Compaction
+    'firstKeptEntryId', 'fromHook', 'tokensBefore',
+  ];
   
   const allKeys = Object.keys(entry).filter(k => !k.startsWith('__') && !NEVER_EXTRACT.includes(k));
 

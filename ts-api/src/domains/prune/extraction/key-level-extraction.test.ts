@@ -22,7 +22,7 @@ describe('extractEntryKeys', () => {
     expect(result.success).toBe(true);
     expect(result.extractedKeys).toContain('thinking');
     expect(result.extractedData.thinking).toBe('step by step reasoning...');
-    expect(result.modifiedEntry.thinking).toBe('[[extracted]]');
+    expect(result.modifiedEntry.thinking).toBe('[[extracted-ent_001]]');
     expect(result.modifiedEntry.__id).toBe('ent_001');
     expect(result.extractedData.__meta).toBeDefined();
   });
@@ -41,7 +41,7 @@ describe('extractEntryKeys', () => {
     expect(result.success).toBe(true);
     expect(result.extractedKeys).toContain('output');
     expect(result.extractedData.output).toBe('command output data');
-    expect(result.modifiedEntry.output).toBe('[[extracted]]');
+    expect(result.modifiedEntry.output).toBe('[[extracted-ent_002]]');
   });
 
   it('preserves __id in modified entry', () => {
@@ -89,7 +89,7 @@ describe('extractEntryKeys', () => {
     expect(result.success).toBe(true);
     expect(result.extractedData.data).toBeDefined();
     expect(result.extractedData.data.thinking).toBe('nested reasoning');
-    expect(result.modifiedEntry.data.thinking).toBe('[[extracted]]');
+    expect(result.modifiedEntry.data.thinking).toBe('[[extracted-ent_005]]');
   });
 
   it('calculates extracted size', () => {
@@ -119,6 +119,90 @@ describe('extractEntryKeys', () => {
     expect(result.error).toBeDefined();
   });
 });
+
+  it('never extracts parentId or other structural fields', () => {
+    const entry: SessionEntry = {
+      __id: 'ent_structural',
+      id: 'ent_structural',
+      type: 'message',
+      parentId: 'parent_abc',
+      timestamp: Date.now(),
+      content: 'a long enough message content that exceeds minimum value length threshold for extraction purposes',
+      _extractable: true,
+      _restored: '2026-02-21T00:00:00Z',
+      _has_tool_calls: true,
+      _pruned: false,
+      _pruned_type: 'none',
+    };
+
+    // Test all trigger types
+    for (const triggerType of ['assistant', 'tool_result', 'thinking', 'user', 'system']) {
+      const result = extractEntryKeys(entry, triggerType);
+
+      // Structural fields must NEVER be extracted
+      expect(result.extractedKeys).not.toContain('parentId');
+      expect(result.extractedKeys).not.toContain('id');
+      expect(result.extractedKeys).not.toContain('__id');
+      expect(result.extractedKeys).not.toContain('type');
+      expect(result.extractedKeys).not.toContain('timestamp');
+      expect(result.extractedKeys).not.toContain('_extractable');
+      expect(result.extractedKeys).not.toContain('_restored');
+      expect(result.extractedKeys).not.toContain('_has_tool_calls');
+      expect(result.extractedKeys).not.toContain('_pruned');
+      expect(result.extractedKeys).not.toContain('_pruned_type');
+
+      // Structural fields must retain their original values
+      expect(result.modifiedEntry.parentId).toBe('parent_abc');
+      expect(result.modifiedEntry.__id).toBe('ent_structural');
+      expect(result.modifiedEntry.type).toBe('message');
+    }
+  });
+
+  it('never extracts tool linking fields', () => {
+    const entry: SessionEntry = {
+      __id: 'ent_tool',
+      type: 'tool_result',
+      parentId: 'parent_123',
+      toolCallId: 'tc_456',
+      tool_call_id: 'tc_456',
+      name: 'exec',
+      output: 'command output data that is long enough to be extracted by the smart pruning system',
+    };
+
+    const result = extractEntryKeys(entry, 'tool_result');
+
+    expect(result.extractedKeys).not.toContain('parentId');
+    expect(result.extractedKeys).not.toContain('toolCallId');
+    expect(result.extractedKeys).not.toContain('tool_call_id');
+    expect(result.modifiedEntry.parentId).toBe('parent_123');
+    expect(result.modifiedEntry.toolCallId).toBe('tc_456');
+    expect(result.modifiedEntry.tool_call_id).toBe('tc_456');
+
+    // Content SHOULD be extracted
+    expect(result.extractedKeys).toContain('output');
+  });
+
+  it('uses [[extracted-${entryId}]] placeholder format with entry id', () => {
+    const entry: SessionEntry = {
+      __id: 'my-entry-id',
+      customType: 'thinking',
+      thinking: 'step by step reasoning...',
+    };
+
+    const result = extractEntryKeys(entry, 'thinking');
+    expect(result.modifiedEntry.thinking).toBe('[[extracted-my-entry-id]]');
+  });
+
+  it('uses id field when __id is missing for placeholder', () => {
+    const entry: SessionEntry = {
+      id: 'fallback-id',
+      customType: 'thinking',
+      thinking: 'step by step reasoning...',
+    };
+
+    const result = extractEntryKeys(entry, 'thinking');
+    expect(result.modifiedEntry.thinking).toBe('[[extracted-fallback-id]]');
+  });
 
 describe('createPlaceholderEntry', () => {
   it('creates minimal placeholder with __id', () => {
@@ -155,10 +239,10 @@ describe('createPlaceholderEntry', () => {
 });
 
 describe('hasExtractedPlaceholders', () => {
-  it('detects [[extracted]] placeholder', () => {
+  it('detects [[extracted-${entryId}]] placeholder', () => {
     const entry: SessionEntry = {
       __id: 'ent_010',
-      content: '[[extracted]]',
+      content: '[[extracted-ent_010]]',
     };
 
     expect(hasExtractedPlaceholders(entry)).toBe(true);
@@ -168,7 +252,7 @@ describe('hasExtractedPlaceholders', () => {
     const entry: SessionEntry = {
       __id: 'ent_011',
       data: {
-        output: '[[extracted]]',
+        output: '[[extracted-ent_011]]',
       },
     };
 
@@ -190,8 +274,8 @@ describe('restoreExtractedContent', () => {
     const placeholder: SessionEntry = {
       __id: 'ent_013',
       type: 'thinking',
-      thinking: '[[extracted]]',
-      model: '[[extracted]]',
+      thinking: '[[extracted-ent_013]]',
+      model: '[[extracted-ent_013]]',
     };
 
     const extractedData = {
@@ -211,7 +295,7 @@ describe('restoreExtractedContent', () => {
     const placeholder: SessionEntry = {
       __id: 'ent_014',
       type: 'thinking',
-      thinking: '[[extracted]]',
+      thinking: '[[extracted-ent_014]]',
       timestamp: 1234567890,
     };
 
@@ -229,8 +313,8 @@ describe('restoreExtractedContent', () => {
   it('handles missing extracted values gracefully', () => {
     const placeholder: SessionEntry = {
       __id: 'ent_015',
-      thinking: '[[extracted]]',
-      missing: '[[extracted]]',
+      thinking: '[[extracted-ent_015]]',
+      missing: '[[extracted-ent_015]]',
     };
 
     const extractedData = {
@@ -242,14 +326,14 @@ describe('restoreExtractedContent', () => {
 
     expect(restored.thinking).toBe('reasoning');
     // Missing key stays as placeholder (acceptable degradation)
-    expect(restored.missing).toBe('[[extracted]]');
+    expect(restored.missing).toBe('[[extracted-ent_015]]');
   });
 
   it('restores nested data content', () => {
     const placeholder: SessionEntry = {
       __id: 'ent_016',
       data: {
-        thinking: '[[extracted]]',
+        thinking: '[[extracted-ent_016]]',
         extra: 'preserved',
       },
     };

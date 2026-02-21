@@ -83,11 +83,11 @@ describe('detectTrigger (position-based)', () => {
     expect(result.hasId).toBe(true);
   });
 
-  it('rejects entries with [[extracted]] placeholders', () => {
+  it('rejects entries with [[extracted-${entryId}]] placeholders', () => {
     const entry: SessionEntry = {
       __id: 'ent_003',
       customType: 'thinking',
-      thinking: '[[extracted]]',
+      thinking: '[[extracted-ent_003]]',
     };
 
     const result = detectTrigger(entry, baseConfig, 5);

@@ -261,8 +261,8 @@ describe('Extraction E2E', () => {
       expect(result.entriesExtracted).toBe(1);
 
       const session = await sessionRepo.load(agentId, sessionId);
-      // The message field should be extracted
-      expect(JSON.stringify(session.entries[0])).toContain('[[extracted]]');
+      // The message field should be extracted (placeholder includes entry id)
+      expect(JSON.stringify(session.entries[0])).toContain('[[extracted-');
     });
 
     it('_extractable: false prevents extraction of matching entries', async () => {
@@ -602,15 +602,12 @@ describe('Extraction E2E', () => {
       session = await sessionRepo.load(agentId, sessionId);
       expect(session.entries[0].thinking).toBe(originalContent); // Still present
 
-      // Phase 4: Add keep_recent messages to expire protection
-      // Protection threshold = 3 (restored position) + 3 (keep_recent) = 6
-      // Need position to reach 6, currently 3. Add 3 more messages.
-      session.entries.push(createUserMessage('new message 4'));
-      session.entries.push(createUserMessage('new message 5'));
-      session.entries.push(createUserMessage('new message 6'));
+      // Phase 4: Expire the time-based re-extraction protection
+      // Set _restored to 11 minutes ago (protection is 600s = 10 minutes)
+      session.entries[0]._restored = new Date(Date.now() - 660_000).toISOString();
       await sessionRepo.save(agentId, sessionId, session);
 
-      // Phase 5: Now re-extraction should succeed (protection expired after 10 min wait)
+      // Phase 5: Now re-extraction should succeed (time-based protection expired)
       const reExtractResult2 = await executor.runSmartPruning(defaultConfig);
       expect(reExtractResult2.entriesExtracted).toBe(1);
 
