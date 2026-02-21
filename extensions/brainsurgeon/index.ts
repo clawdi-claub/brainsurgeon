@@ -3,14 +3,13 @@ import * as path from 'node:path';
 
 /**
  * BrainSurgeon OpenClaw Plugin
- * 
+ *
  * Provides:
- * - restore_remote tool for restoring extracted session content
- * - after_tool_call hook for auto-pruning via BrainSurgeon API
- * - before_compaction hook for forwarding compaction events
+ * - purge_control tool for controlling extraction (get_context, restore, set_extractable)
+ * - Server-side pruning via BrainSurgeon API integration
  */
 
-// Minimal types — real types come from OpenClaw at runtime
+// Minimal types - real types come from OpenClaw at runtime
 type PluginApi = {
   id: string;
   name: string;
@@ -186,7 +185,7 @@ async function restoreEntry(
       await releaseLock(lockFile);
     }
   } catch (err: any) {
-    logger?.error?.(`restore_remote error: ${err.message}`);
+    logger?.error?.(`purge_control restore error: ${err.message}`);
     return { success: false, error: err.message };
   }
 }
@@ -212,7 +211,7 @@ async function callBrainSurgeonApi(apiUrl: string, method: string, path: string,
 const plugin = {
   id: 'brainsurgeon',
   name: 'BrainSurgeon',
-  description: 'Session management plugin — restore_remote tool, event forwarding, and smart pruning triggers',
+  description: 'Session management plugin — purge_control tool (get_context, restore, set_extractable)',
   version: '2.0.0',
 
   register(api: PluginApi) {
@@ -258,15 +257,15 @@ const plugin = {
               },
             },
           },
-          async execute(_toolCallId: string, params: { 
-            action: string; 
-            session?: string; 
-            entry?: string; 
+          async execute(_toolCallId: string, params: {
+            action: string;
+            session?: string;
+            entry?: string;
             keys?: string;
             value?: string;
           }) {
             const agentId = ctx.agentId!;
-            
+
             if (!params.session) {
               return {
                 content: [{ type: 'text', text: 'Error: session parameter is required' }],
@@ -277,26 +276,26 @@ const plugin = {
             if (params.action === 'get_context') {
               try {
                 const result = await callBrainSurgeonApi(
-                  cfg.apiUrl, 
-                  'GET', 
+                  cfg.apiUrl,
+                  'GET',
                   `/api/sessions/${agentId}/${params.session}`
                 );
-                
+
                 const entries = result.entries || [];
-                const extracted = entries.filter((e: any) => 
-                  Object.values(e).some(v => 
+                const extracted = entries.filter((e: any) =>
+                  Object.values(e).some(v =>
                     typeof v === 'string' && v.startsWith('[[extracted-')
                   )
                 );
-                
+
                 const text = `Session: ${params.session}\n` +
                   `Total entries: ${entries.length}\n` +
                   `Extracted entries: ${extracted.length}\n\n` +
                   `Extracted entry IDs:\n` +
-                  (extracted.length > 0 
+                  (extracted.length > 0
                     ? extracted.map((e: any) => `  - ${e.__id || e.id || 'unknown'}`).join('\n')
                     : '  (none)');
-                
+
                 return { content: [{ type: 'text', text }] };
               } catch (err: any) {
                 return { content: [{ type: 'text', text: `Error getting context: ${err.message}` }] };
@@ -310,9 +309,9 @@ const plugin = {
                   content: [{ type: 'text', text: 'Error: entry parameter is required for restore action' }],
                 };
               }
-              
+
               const keysArr = params.keys?.split(',').map(k => k.trim()) || undefined;
-              
+
               const result = await restoreEntry(
                 cfg.agentsDir,
                 agentId,
@@ -351,7 +350,7 @@ const plugin = {
                   content: [{ type: 'text', text: 'Error: value parameter is required for set_extractable action (true, false, or integer)' }],
                 };
               }
-              
+
               // Parse value
               let extractableValue: boolean | number;
               const val = params.value.toLowerCase();
@@ -368,7 +367,7 @@ const plugin = {
                 }
                 extractableValue = num;
               }
-              
+
               // Call API to update entry metadata
               try {
                 await callBrainSurgeonApi(
@@ -377,7 +376,7 @@ const plugin = {
                   `/api/sessions/${agentId}/${params.session}/entries/${params.entry}/meta`,
                   { _extractable: extractableValue }
                 );
-                
+
                 return {
                   content: [{ type: 'text', text: `Set _extractable=${extractableValue} for entry ${params.entry}` }],
                 };
@@ -400,7 +399,7 @@ const plugin = {
 
     // ── after_tool_call hook: auto-prune trigger ──────────────────────
     // Note: auto-prune is disabled in dev/experimental mode
-    // The extension provides restore_remote tool; pruning is handled server-side
+    // The extension provides purge_control tool; pruning is handled server-side
     // or via explicit API calls from the BrainSurgeon cron service
     if (cfg.enableAutoPrune) {
       log.info(`Auto-prune registered (threshold: ${cfg.autoPruneThreshold}) - server-side pruning enabled`);
