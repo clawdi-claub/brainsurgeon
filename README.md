@@ -1,87 +1,124 @@
 # 🧠 BrainSurgeon
 
-> AI session memory surgery - extract, compress, restore.
+> AI session memory surgery — extract, compact, restore.
 
-BrainSurgeon is an OpenClaw plugin that intelligently manages agent session memory through extraction, compression, and restoration. It helps AI agents remember important context while keeping token usage efficient.
+BrainSurgeon is an **OpenClaw** companion service + extension that helps you keep long-running agent sessions usable by **extracting verbose/low-value blobs** out of the JSONL, while keeping the important structure and letting you **restore on demand**.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Docker Pulls](https://img.shields.io/docker/pulls/lpc/brainsurgeon.svg)](https://hub.docker.com/r/lpc/brainsurgeon)
+- **Web UI** for browsing sessions, inspecting entries, restoring, and controlling extraction
+- **REST API** for automation and integrations
+- **OpenClaw extension** that exposes a single control tool: `purge_control`
 
-## ✨ Features
+## ✨ What it does
 
-- **Smart Pruning**: Automatically extracts and removes verbose thinking from sessions
-- **Session Compression**: Reduces session size by 60-90% while preserving key information
-- **One-Click Restore**: Instantly restore extracted content when needed
-- **API-First**: Full REST API for programmatic access
-- **Self-Hosted**: Run entirely on your own infrastructure
-- **OpenClaw Plugin**: Native integration with OpenClaw agents
+- **Smart Purge / Smart Pruning** (optional)
+  - Continuously scans sessions
+  - Extracts large values (default: long `thinking` + `tool_result` payloads)
+  - Keeps N recent messages intact
+  - Retention cleanup for old extracted blobs
+- **Manual extraction & restore**
+  - Restore previously extracted content into the session entry
+  - Mark specific entries as **non-extractable** (`_extractable: false`)
+- **Safety controls**
+  - API key auth (`X-API-Key`)
+  - Optional global **readonly mode** (`BRAINSURGEON_READONLY=true`)
 
-## 🚀 Quick Start
+## 🚀 Quick start (Docker)
 
-### Option 1: Docker (Recommended)
+BrainSurgeon needs access to your OpenClaw agents directory.
+
+> If you want to use extraction/restore/pruning features, mount your OpenClaw data **read-write**.
 
 ```bash
-# Start the API and WebUI
-docker run -d \
-  --name brainsurgeon \
-  -p 8000:8000 \
-  -v ~/.openclaw:/openclaw:ro \
-  -e AGENTS_DIR=/openclaw/agents \
-  -e DATA_DIR=/openclaw \
-  lpc/brainsurgeon
+# Build from this repo (recommended during development)
+docker build -t brainsurgeon:local .
 
-# Access the WebUI
+# Run
+docker run -d --name brainsurgeon \
+  -p 8000:8000 \
+  -v ~/.openclaw:/openclaw:rw \
+  -e AGENTS_DIR=/openclaw/agents \
+  -e DATA_DIR=/openclaw/brainsurgeon \
+  -e BRAINSURGEON_API_KEYS="change-me" \
+  brainsurgeon:local
+
+# Web UI
 open http://localhost:8000
+
+# API (auth-info is public)
+curl http://localhost:8000/api/auth-info
+
+# Agents (requires X-API-Key if keys are configured)
+curl -H "X-API-Key: change-me" http://localhost:8000/api/agents
 ```
 
-### Option 2: Docker Compose
+### Minimal Docker Compose (example)
 
 ```yaml
-version: '3.8'
 services:
   brainsurgeon:
-    image: lpc/brainsurgeon
+    build: .
     ports:
       - "8000:8000"
     volumes:
-      - ~/.openclaw:/openclaw:ro
+      - ~/.openclaw:/openclaw:rw
     environment:
       - AGENTS_DIR=/openclaw/agents
-      - DATA_DIR=/openclaw
-```
-
-### Option 3: Development
-
-```bash
-# Clone and setup
-git clone https://github.com/lpc-one/brainsurgeon.git
-cd brainsurgeon
-
-# Install dependencies
-npm install
-
-# Build TypeScript
-npm run build
-
-# Run
-npm start
+      - DATA_DIR=/openclaw/brainsurgeon
+      - BRAINSURGEON_API_KEYS=change-me
+      # Optional:
+      # - BRAINSURGEON_READONLY=true
 ```
 
 ## 🔧 Configuration
 
-### Environment Variables
+### Environment variables
 
 | Variable | Description | Default |
-|----------|-------------|---------|
+|---|---|---|
 | `PORT` | API server port | `8000` |
-| `AGENTS_DIR` | Path to OpenClaw agents directory | `/openclaw/agents` |
-| `DATA_DIR` | Path to OpenClaw data directory | `/openclaw` |
-| `BRAINSURGEON_API_KEYS` | API key for authentication (optional) | none |
-| `LOG_LEVEL` | Logging level (debug, info, warn, error) | `info` |
+| `AGENTS_DIR` | Path to OpenClaw agents directory | `/home/openclaw/.openclaw/agents` |
+| `DATA_DIR` | BrainSurgeon data dir (bus db, etc.) | `/home/openclaw/.openclaw/brainsurgeon` |
+| `BRAINSURGEON_API_KEYS` | Comma-separated API keys. If set → auth required. | none |
+| `BRAINSURGEON_READONLY` | If `true`, disables write operations. | `false` |
+| `BRAINSURGEON_CORS_ORIGINS` | Comma-separated allowed origins | `http://localhost:8000,…` |
+| `LOG_LEVEL` | Logging level | `info` |
 
-### OpenClaw Plugin Configuration
+### Smart Purge (runtime config)
 
-Add to your `openclaw.json`:
+Smart purge is controlled by a runtime config stored at:
+
+- `{AGENTS_DIR}/../.brainsurgeon/config.json`
+
+Use the API to view/update it:
+
+```bash
+# Read current config
+curl -H "X-API-Key: change-me" http://localhost:8000/api/config
+
+# Enable smart purge with sane defaults
+curl -H "X-API-Key: change-me" -H "Content-Type: application/json" \
+  -d '{
+    "enabled": true,
+    "trigger_types": ["thinking", "tool_result"],
+    "keep_recent": 3,
+    "min_value_length": 500,
+    "scan_interval_seconds": 30,
+    "retention": "7d",
+    "keep_after_restore_seconds": 600
+  }' \
+  http://localhost:8000/api/config
+```
+
+## 🧩 OpenClaw extension (`purge_control`)
+
+The BrainSurgeon extension exposes **one** tool for agents:
+
+- `purge_control`
+  - `get_context` — view extraction/context stats
+  - `restore` — restore extracted content for an entry
+  - `set_extractable` — set `_extractable` for an entry
+
+Example OpenClaw config (`~/.openclaw/openclaw.json`):
 
 ```json
 {
@@ -91,10 +128,12 @@ Add to your `openclaw.json`:
       "brainsurgeon": {
         "enabled": true,
         "config": {
-          "agentsDir": "/path/to/agents",
+          "agentsDir": "/home/you/.openclaw/agents",
           "apiUrl": "http://localhost:8000",
-          "enableAutoPrune": false,
-          "autoPruneThreshold": 3
+          "apiKey": "change-me",
+          "enableAutoPrune": true,
+          "autoPruneThreshold": 3,
+          "keepRestoreRemoteCalls": false
         }
       }
     }
@@ -102,108 +141,65 @@ Add to your `openclaw.json`:
 }
 ```
 
-## 📡 API Reference
+## 📡 API Reference (high level)
 
-### Authentication
+> All endpoints below live under `/api/*`. `GET /api/auth-info` is public; everything else requires `X-API-Key` when `BRAINSURGEON_API_KEYS` is set.
 
-If `BRAINSURGEON_API_KEYS` is set, include your API key:
+### Core
 
-```bash
-curl -H "X-API-Key: your-api-key" http://localhost:8000/api/agents
-```
+- `GET /api/health`
+- `GET /api/auth-info`
+- `GET /api/agents`
 
-### Endpoints
+### Sessions
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/agents` | List all agents |
-| `GET` | `/api/agents/:agentId/sessions` | List sessions for an agent |
-| `GET` | `/api/session/:sessionId` | Get session details |
-| `POST` | `/api/session/extract` | Extract content from session |
-| `POST` | `/api/session/restore` | Restore extracted content |
-| `POST` | `/api/session/prune` | Prune a session |
-| `GET` | `/api/auth-info` | Check if API key is required |
+- `GET /api/sessions?agent=&status=`
+- `GET /api/sessions/:agent/:id`
+- `GET /api/sessions/:agent/:id/summary`
+- `POST /api/sessions/:agent/:id/prune`
+- `POST /api/sessions/:agent/:id/compact`
+- `POST /api/sessions/:agent/:id/prune/smart`
+- `POST /api/sessions/:agent/:id/prune/enhanced`
+- `GET /api/sessions/:agent/:id/entries/:entryId/extracted`
+- `POST /api/sessions/:agent/:id/entries/:entryId/restore`
+- `GET /api/sessions/:agent/:id/context`
+- `PUT /api/sessions/:agent/:id/entries/:entryId/meta` (currently supports `_extractable`)
+- `DELETE /api/sessions/:agent/:id` (moves to trash)
+
+### Cron / smart purge service
+
+- `GET /api/cron/status`
+- `GET /api/cron/jobs`
+- `POST /api/cron/jobs/:name/run`
+- `POST /api/cron/reload`
+
+### Config
+
+- `GET /api/config`
+- `POST /api/config`
+- `GET /api/config/env` (env-derived legacy values)
+
+### Trash
+
+- `GET /api/trash`
+- `POST /api/trash/:agent/:id/restore`
+- `DELETE /api/trash/:agent/:id`
+- `POST /api/trash/cleanup`
 
 ## 🧪 Testing
-
-### Run the test suite
 
 ```bash
 cd ts-api
 npm test
 ```
 
-### Manual smoke test
+## 🔒 Security notes
 
-```bash
-# Start the service
-docker run -d -p 8000:8000 lpc/brainsurgeon
-
-# Check health
-curl http://localhost:8000/api/health
-
-# List agents (requires API key if set)
-curl -H "X-API-Key: your-key" http://localhost:8000/api/agents
-```
-
-## 🏗️ Architecture
-
-```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   OpenClaw     │────▶│  BrainSurgeon    │────▶│   Extracted     │
-│   Agents       │     │  API Server      │     │   Storage       │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
-                              │
-                              ▼
-                        ┌──────────────────┐
-                        │   WebUI          │
-                        │   (Optional)     │
-                        └──────────────────┘
-```
-
-## 📊 Token Savings Benchmark
-
-Smart pruning typically saves **60-90%** on token usage for long-running sessions:
-
-| Session Type | Original Tokens | After Pruning | Savings |
-|-------------|-----------------|---------------|---------|
-| Debug session (100 msgs) | ~50,000 | ~5,000 | 90% |
-| Analysis session (50 msgs) | ~25,000 | ~8,000 | 68% |
-| Chat session (30 msgs) | ~15,000 | ~6,000 | 60% |
-
-*Benchmark methodology: Real agent sessions with varying complexity. Token counts based on OpenAI pricing model.*
-
-## 🤖 For AI Agents
-
-Agents can use the `restore_remote` tool to restore extracted content:
-
-```json
-{
-  "tool": "restore_remote",
-  "args": {
-    "sessionKey": "agent:your-agent:main",
-    "session": "session-id",
-    "entry": "entry-id"
-  }
-}
-```
-
-## 🔒 Security
-
-- API key authentication for production deployments
-- Read-only access to OpenClaw agents directory
-- No external network calls by default
-- All data stays on your infrastructure
-
-## 📝 License
-
-MIT License - see [LICENSE](LICENSE) for details.
+- If you enable any write features (extract/restore/prune/meta), BrainSurgeon must have RW access to the relevant OpenClaw data.
+- Use `BRAINSURGEON_READONLY=true` for a safe “viewer mode”.
+- Keep your `BRAINSURGEON_API_KEYS` out of git and don’t expose the API without auth.
 
 ## 🆘 Support
 
-- Issues: https://github.com/lpc-one/brainsurgeon/issues
-- Discussions: https://github.com/lpc-one/brainsurgeon/discussions
-
----
-
-<p align="center">Made with 🧠 by <a href="https://lpc.one">LPC</a></p>
+- Issues: https://github.com/clawdi-claub/brainsurgeon/issues
+- Discussions: https://github.com/clawdi-claub/brainsurgeon/discussions

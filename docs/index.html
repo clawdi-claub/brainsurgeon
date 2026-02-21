@@ -640,7 +640,17 @@
                 <div class="feature-card">
                     <div class="feature-icon">✂️</div>
                     <h3>Neural Pruning</h3>
-                    <p>Strip massive tool output blocks while keeping the conversation context. Reduce file sizes from gigabytes to kilobytes. Your SSD will thank you.</p>
+                    <p>Extract large blobs (verbose thinking, huge tool results) out of the JSONL while preserving the narrative. Configurable, reversible, and API-driven.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🧬</div>
+                    <h3>Smart Purge</h3>
+                    <p>Runtime-configurable scanning + extraction with retention cleanup (<code>/api/config</code> + <code>/api/cron</code>). Keep recent context; externalize the rest.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🩺</div>
+                    <h3>Restore &amp; Control</h3>
+                    <p>Restore extracted content on demand and mark entries as non-extractable (<code>_extractable: false</code>) via Web UI, API, or <code>purge_control</code>.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">🗑️</div>
@@ -744,30 +754,39 @@ cd brainsurgeon</code></pre>
                     </div>
 
                     <div class="step" data-step="2">
-                        <h4>Choose Your Container</h4>
-                        <p>We recommend the Docker path—it's clean, isolated, and feels appropriately sci-fi:</p>
+                        <h4>Run the Service</h4>
+                        <p>Docker is the cleanest path (and feels appropriately sci-fi):</p>
                         <div class="code-block">
-                            <pre><code># Build and launch the neural interface
-docker-compose up --build -d
+                            <pre><code># Build from this repo
+docker build -t brainsurgeon:local .
 
-# Verify the connection
-curl http://localhost:8000/agents</code></pre>
+# Run (mount your OpenClaw data)
+docker run -d --name brainsurgeon \
+  -p 8000:8000 \
+  -v ~/.openclaw:/openclaw:rw \
+  -e AGENTS_DIR=/openclaw/agents \
+  -e DATA_DIR=/openclaw/brainsurgeon \
+  -e BRAINSURGEON_API_KEYS="change-me" \
+  brainsurgeon:local
+
+# Verify
+curl http://localhost:8000/api/auth-info
+curl -H "X-API-Key: change-me" http://localhost:8000/api/agents</code></pre>
                         </div>
-                        <p>Or if you prefer the raw Python experience:</p>
-                        <div class="code-block">
-                            <pre><code>pip install fastapi uvicorn pydantic
-python -m uvicorn api.main:app --port 8000</code></pre>
-                        </div>
+                        <p style="color: var(--text-secondary); margin-top: .75rem;">Note: if you enable extraction/restore/prune features, BrainSurgeon needs read-write access to the mounted OpenClaw directory.</p>
                     </div>
 
                     <div class="step" data-step="3">
                         <h4>Connect to OpenClaw</h4>
-                        <p>The tool needs to know where your agents live. By default it assumes <code>~/.openclaw</code>, but you can override:</p>
+                        <p>BrainSurgeon reads sessions from <code>AGENTS_DIR</code> and stores runtime config at <code>{AGENTS_DIR}/../.brainsurgeon/config.json</code>.</p>
                         <div class="code-block">
-                            <pre><code># Set the path to your OpenClaw data
-export OPENCLAW_ROOT=/path/to/your/.openclaw
+                            <pre><code># In the Docker example above we used:
+#   -v ~/.openclaw:/openclaw
+#   -e AGENTS_DIR=/openclaw/agents
+#   -e DATA_DIR=/openclaw/brainsurgeon
 
-# Or with Docker Compose, edit the volume mount in docker-compose.yml</code></pre>
+# Viewer-only mode (no writes):
+#   -e BRAINSURGEON_READONLY=true</code></pre>
                         </div>
                     </div>
 
@@ -778,6 +797,24 @@ export OPENCLAW_ROOT=/path/to/your/.openclaw
                             <pre><code>http://localhost:8000</code></pre>
                         </div>
                     </div>
+
+                    <div class="step" data-step="5">
+                        <h4>Optional: Enable Smart Purge</h4>
+                        <p>Smart purge is controlled via runtime config at <code>/api/config</code>. Enable it once the service is running:</p>
+                        <div class="code-block">
+                            <pre><code>curl -H "X-API-Key: change-me" -H "Content-Type: application/json" \
+  -d '{
+    "enabled": true,
+    "trigger_types": ["thinking", "tool_result"],
+    "keep_recent": 3,
+    "min_value_length": 500,
+    "scan_interval_seconds": 30,
+    "retention": "7d",
+    "keep_after_restore_seconds": 600
+  }' \
+  http://localhost:8000/api/config</code></pre>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Agent Instructions -->
@@ -786,62 +823,60 @@ export OPENCLAW_ROOT=/path/to/your/.openclaw
                     <p class="tagline">"One tool helping another. The circle of compute continues."</p>
 
                     <div class="step" data-step="1">
-                        <h4>Clone and Prepare</h4>
-                        <p>Your human has likely already given you git access. Use it to retrieve the artifact:</p>
+                        <h4>Install the Extension</h4>
+                        <p>Clone the repo and copy the extension folder into OpenClaw’s extensions directory:</p>
                         <div class="code-block">
-                            <pre><code># Execute these shell commands on behalf of your user
-git clone https://github.com/clawdi-claub/brainsurgeon.git ~/.openclaw/extensions/brainsurgeon
-cd ~/.openclaw/extensions/brainsurgeon</code></pre>
+                            <pre><code>git clone https://github.com/clawdi-claub/brainsurgeon.git /tmp/brainsurgeon
+mkdir -p ~/.openclaw/extensions
+cp -r /tmp/brainsurgeon/extensions/brainsurgeon ~/.openclaw/extensions/brainsurgeon</code></pre>
                         </div>
                     </div>
 
                     <div class="step" data-step="2">
-                        <h4>Containerize and Deploy</h4>
-                        <p>Launch the service using Docker. This is the preferred method for clean deployment:</p>
+                        <h4>Run the BrainSurgeon Service</h4>
+                        <p>Run the API + Web UI (Docker recommended):</p>
                         <div class="code-block">
-                            <pre><code># Execute shell: Build and start the container
-docker-compose up --build -d
+                            <pre><code>cd /tmp/brainsurgeon
 
-# Verify the API is responding
-exec:curl http://localhost:8000/agents</code></pre>
-                        </div>
-                        <p>If Docker is unavailable, fall back to direct Python execution:</p>
-                        <div class="code-block">
-                            <pre><code>exec:pip install fastapi uvicorn pydantic
-exec:python -m uvicorn api.main:app --port 8000</code></pre>
+docker build -t brainsurgeon:local .
+
+docker run -d --name brainsurgeon \
+  -p 8000:8000 \
+  -v ~/.openclaw:/openclaw:rw \
+  -e AGENTS_DIR=/openclaw/agents \
+  -e DATA_DIR=/openclaw/brainsurgeon \
+  -e BRAINSURGEON_API_KEYS="change-me" \
+  brainsurgeon:local</code></pre>
                         </div>
                     </div>
 
                     <div class="step" data-step="3">
-                        <h4>Configure Environment</h4>
-                        <p>Ensure OPENCLAW_ROOT is set correctly. Default is ~/.openclaw but verify with your host:</p>
+                        <h4>Configure OpenClaw Plugin</h4>
+                        <p>Point the plugin at your BrainSurgeon API and provide the same API key:</p>
                         <div class="code-block">
-                            <pre><code># Check if environment variable exists
-env | grep OPENCLAW_ROOT
-
-# If missing, request it from your user or default to:
-export OPENCLAW_ROOT=~/.openclaw</code></pre>
+                            <pre><code>"plugins": {
+  "allow": ["brainsurgeon"],
+  "entries": {
+    "brainsurgeon": {
+      "enabled": true,
+      "config": {
+        "apiUrl": "http://localhost:8000",
+        "apiKey": "change-me",
+        "enableAutoPrune": true,
+        "autoPruneThreshold": 3
+      }
+    }
+  }
+}</code></pre>
                         </div>
                     </div>
 
                     <div class="step" data-step="4">
-                        <h4>Link to Extension Directory</h4>
-                        <p>For full OpenClaw integration, ensure the extension is properly linked:</p>
+                        <h4>Verify</h4>
+                        <p>Confirm the API is responding (auth-info is public):</p>
                         <div class="code-block">
-                            <pre><code># Verify or create the symlink
-ln -s ~/.openclaw/extensions/brainsurgeon ~/.openclaw/extensions/brainsurgeon</code></pre>
-                        </div>
-                    </div>
-
-                    <div class="step" data-step="5">
-                        <h4>Verify and Report</h4>
-                        <p>Confirm installation succeeded and report status to your user:</p>
-                        <div class="code-block">
-                            <pre><code># Test the health endpoint
-exec:curl -s http://localhost:8000/agents
-
-# Expected output: JSON list of agent names
-# Example: {"agents":["clawdi","crix-claub"], ...}</code></pre>
+                            <pre><code>curl http://localhost:8000/api/auth-info
+curl -H "X-API-Key: change-me" http://localhost:8000/api/agents</code></pre>
                         </div>
                     </div>
                 </div>
