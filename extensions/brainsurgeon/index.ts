@@ -42,6 +42,7 @@ function getPluginConfig(api: PluginApi) {
   return {
     agentsDir: (pc.agentsDir as string) || '/home/openclaw/.openclaw/agents',
     apiUrl: (pc.apiUrl as string) || 'http://localhost:8000',
+    apiKey: (pc.apiKey as string) || 'dev_key_insecure_do_not_use_in_prod',
     enableAutoPrune: pc.enableAutoPrune !== false,
     autoPruneThreshold: (pc.autoPruneThreshold as number) || 3,
     keepRestoreRemoteCalls: !!pc.keepRestoreRemoteCalls,
@@ -192,11 +193,17 @@ async function restoreEntry(
 
 // ─── API helper ───────────────────────────────────────────────────────
 
-async function callBrainSurgeonApi(apiUrl: string, method: string, path: string, body?: any): Promise<any> {
+async function callBrainSurgeonApi(apiUrl: string, apiKey: string, method: string, path: string, body?: any): Promise<any> {
   const url = `${apiUrl}${path}`;
+  const headers: Record<string, string> = {
+    'X-API-Key': apiKey,
+  };
+  if (body) {
+    headers['Content-Type'] = 'application/json';
+  }
   const res = await fetch(url, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : {},
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
@@ -277,6 +284,7 @@ const plugin = {
               try {
                 const result = await callBrainSurgeonApi(
                   cfg.apiUrl,
+                  cfg.apiKey,
                   'GET',
                   `/api/sessions/${agentId}/${params.session}`
                 );
@@ -372,6 +380,7 @@ const plugin = {
               try {
                 await callBrainSurgeonApi(
                   cfg.apiUrl,
+                  cfg.apiKey,
                   'PUT',
                   `/api/sessions/${agentId}/${params.session}/entries/${params.entry}/meta`,
                   { _extractable: extractableValue }
