@@ -252,7 +252,7 @@ Based on backlog items kb-140 through kb-146:
 **Dev Test:**
 1. Run dev environment with various umask settings
 2. Verify BrainSurgeon can read/write extracted files
-3. Verify restore_remote can access files
+3. Verify purge_control can access files
 
 ---
 
