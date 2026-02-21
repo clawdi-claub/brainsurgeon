@@ -1,0 +1,84 @@
+# BrainSurgeon Development Environment
+# Use: docker-compose -f docker-compose.dev.yml up --build -d
+
+version: '3.8'
+
+services:
+  # OpenClaw Gateway (Development Instance)
+  gateway-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    container_name: openclaw-gateway-dev
+    ports:
+      - "28789:18789"  # Gateway API
+      - "28793:18793"  # Canvas
+    volumes:
+      - ./data/agents:/app/agents
+      - ./data/extracted:/app/extracted
+      - ./logs:/app/logs
+      # Mount extensions for hot-reload (changes reflected without rebuild)
+      - ../../extensions:/app/extensions:ro
+      # Mount config for quick iteration
+      - ./config/openclaw.dev.json:/app/config.json:ro
+    environment:
+      - NODE_ENV=development
+      - LOG_LEVEL=debug
+      - OPENCLAW_CONFIG_PATH=/app/config.json
+      # Optional: pass through API keys from host env
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+    networks:
+      - brainsurgeon-dev
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:18789/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  # BrainSurgeon API Server (Development Build)
+  # Can run standalone (without gateway-dev) for UI/API testing
+  brainsurgeon-api-dev:
+    build:
+      context: ../ts-api
+      dockerfile: Dockerfile.dev
+    container_name: brainsurgeon-api-dev
+    ports:
+      - "28000:8000"
+    volumes:
+      - ../ts-api/src:/app/src:ro
+      - ./data/agents:/data/agents:ro
+      - ./data:/data
+    environment:
+      - PORT=8000
+      - AGENTS_DIR=/data/agents
+      - DATA_DIR=/data
+      - LOG_LEVEL=debug
+      - BRAINSURGEON_API_KEYS=dev_key_insecure_do_not_use_in_prod
+      # Gateway URL optional - will show warning if not available
+      # - GATEWAY_URL=http://gateway-dev:18789
+    networks:
+      - brainsurgeon-dev
+    # No dependency on gateway - can run standalone
+    restart: unless-stopped
+
+  # BrainSurgeon WebUI (Static + Proxy)
+  brainsurgeon-web-dev:
+    image: nginx:alpine
+    container_name: brainsurgeon-web-dev
+    ports:
+      - "28080:80"
+    volumes:
+      - ../web:/usr/share/nginx/html:ro
+      - ./config/nginx.dev.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - brainsurgeon-dev
+    depends_on:
+      - brainsurgeon-api-dev
+    restart: unless-stopped
+
+networks:
+  brainsurgeon-dev:
+    driver: bridge
+    name: brainsurgeon-dev

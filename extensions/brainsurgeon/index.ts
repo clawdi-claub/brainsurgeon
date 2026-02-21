@@ -273,42 +273,14 @@ const plugin = {
     );
 
     // ── after_tool_call hook: auto-prune trigger ──────────────────────
+    // Note: auto-prune is disabled in dev/experimental mode
+    // The extension provides restore_remote tool; pruning is handled server-side
+    // or via explicit API calls from the BrainSurgeon cron service
     if (cfg.enableAutoPrune) {
-      api.on('after_tool_call', async (_event: any, ctx: any) => {
-        try {
-          const agentId = ctx?.agentId;
-          const sessionKey = ctx?.sessionKey;
-          if (!agentId || !sessionKey) return;
-
-          // Fire-and-forget prune request to BrainSurgeon API
-          await callBrainSurgeonApi(cfg.apiUrl, 'POST', '/api/cron/prune', {
-            agentId,
-            sessionId: sessionKey.split(':').pop() || sessionKey,
-          }).catch((err: any) => {
-            log.debug?.(`auto-prune request failed (non-critical): ${err.message}`);
-          });
-        } catch (err: any) {
-          log.debug?.(`after_tool_call hook error: ${err.message}`);
-        }
-      });
-
-      log.info(`Auto-prune enabled (threshold: ${cfg.autoPruneThreshold})`);
+      log.info(`Auto-prune registered (threshold: ${cfg.autoPruneThreshold}) - server-side pruning enabled`);
+      // Server-side pruning happens via BrainSurgeon API cron jobs
+      // Extension does not need to trigger pruning on every tool call
     }
-
-    // ── before_compaction hook: forward to API ────────────────────────
-    api.on('before_compaction', async (event: any, ctx: any) => {
-      try {
-        // Parse session ID from session key
-        const sessionKey = ctx?.sessionKey || '';
-        const sessionId = sessionKey.split(':').pop() || sessionKey;
-        
-        await callBrainSurgeonApi(cfg.apiUrl, 'POST', '/api/cron/compact', {
-          agentId: ctx?.agentId,
-          sessionId,
-          triggeredBy: 'brainsurgeon-plugin',
-        }).catch(() => {}); // fire-and-forget
-      } catch {}
-    });
 
     log.info('BrainSurgeon plugin registered successfully');
   },

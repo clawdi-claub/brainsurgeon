@@ -1,0 +1,67 @@
+# OpenClaw Gateway - Development Build
+# Based on the npm-installed openclaw CLI
+
+FROM node:22-alpine
+
+# Install system dependencies
+RUN apk add --no-cache \
+    curl \
+    wget \
+    git \
+    bash \
+    python3 \
+    make \
+    g++
+
+# Install OpenClaw CLI globally
+RUN npm install -g openclaw
+
+# Create app directories
+WORKDIR /app
+RUN mkdir -p /app/agents /app/extracted /app/logs /app/extensions
+
+# Copy dev config
+COPY config/openclaw.dev.json /app/config.json
+
+# Create entrypoint script
+RUN cat > /app/entrypoint.sh << 'EOF'
+#!/bin/sh
+set -e
+
+# Set environment
+export NODE_ENV=development
+export LOG_LEVEL=debug
+export OPENCLAW_CONFIG_PATH=/app/config.json
+
+# Ensure data directories exist
+mkdir -p /app/agents /app/extracted /app/logs
+
+# Link extensions to the right place (OpenClaw looks in specific locations)
+mkdir -p ~/.openclaw/extensions
+for ext in /app/extensions/*/; do
+    if [ -d "$ext" ]; then
+        ext_name=$(basename "$ext")
+        echo "Linking extension: $ext_name"
+        rm -f ~/.openclaw/extensions/$ext_name
+        ln -s "$ext" ~/.openclaw/extensions/$ext_name
+    fi
+done
+
+echo "Starting OpenClaw Gateway on port 18789..."
+echo "Config: $OPENCLAW_CONFIG_PATH"
+echo "Agents: /app/agents"
+echo "Extensions: ~/.openclaw/extensions"
+
+# Start the gateway
+exec openclaw gateway --port 18789
+EOF
+
+RUN chmod +x /app/entrypoint.sh
+
+# Health check
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=5 \
+    CMD wget --spider -q http://localhost:18789/health || exit 1
+
+EXPOSE 18789 18793
+
+ENTRYPOINT ["/app/entrypoint.sh"]

@@ -1,0 +1,24 @@
+# BrainSurgeon API Development Dockerfile
+# Features: Hot-reload with tsx, debug mode
+
+FROM node:22-alpine
+
+WORKDIR /app
+
+# Install tsx for hot-reload (faster than ts-node)
+RUN npm install -g tsx
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy source
+COPY src/ ./src/
+
+# Expose port
+EXPOSE 8000
+
+# Start with tsx for hot-reload
+CMD ["npx", "tsx", "watch", "src/app.ts"]
