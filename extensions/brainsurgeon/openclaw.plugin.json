@@ -1,49 +1,7 @@
 {
   "id": "brainsurgeon",
-  "name": "BrainSurgeon",
-  "description": "Session management plugin — restore_remote tool, event forwarding, and compaction triggers for the BrainSurgeon web UI",
-  "version": "2.0.0",
   "configSchema": {
     "type": "object",
-    "additionalProperties": false,
-    "properties": {
-      "agentsDir": {
-        "type": "string",
-        "description": "Path to OpenClaw agents directory",
-        "default": "/home/openclaw/.openclaw/agents"
-      },
-      "apiUrl": {
-        "type": "string",
-        "description": "Base URL for BrainSurgeon TypeScript API",
-        "default": "http://localhost:8000"
-      },
-      "enableAutoPrune": {
-        "type": "boolean",
-        "description": "Enable automatic smart pruning on message events",
-        "default": true
-      },
-      "autoPruneThreshold": {
-        "type": "number",
-        "description": "Message count threshold for auto-pruning",
-        "default": 3
-      },
-      "keepRestoreRemoteCalls": {
-        "type": "boolean",
-        "description": "Debug: keep restore_remote tool calls visible in session after execution",
-        "default": false
-      },
-      "busDbPath": {
-        "type": "string",
-        "description": "Path to shared SQLite message bus database",
-        "default": "/home/openclaw/.openclaw/brainsurgeon/bus.db"
-      }
-    }
-  },
-  "uiHints": {
-    "apiUrl": { "label": "API URL", "placeholder": "http://localhost:8000" },
-    "enableAutoPrune": { "label": "Auto-Prune Enabled" },
-    "autoPruneThreshold": { "label": "Prune Threshold (messages)" },
-    "keepRestoreRemoteCalls": { "label": "Debug: Keep Restore Calls" },
-    "busDbPath": { "label": "Message Bus DB Path", "sensitive": false }
+    "properties": {}
   }
 }

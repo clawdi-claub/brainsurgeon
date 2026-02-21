@@ -1,18 +1,14 @@
 name: brainsurgeon
-description: BrainSurgeon plugin for OpenClaw integration - provides restore_response tool and event forwarding
-version: 1.2.0
+description: BrainSurgeon plugin for OpenClaw — restore_remote tool, event forwarding, smart pruning triggers
+version: 2.0.0
 author: anderslaub + friends
 
-# Extension type - PLUGIN to enable tool registration and event subscription
 extension_type: plugin
 
-# Entry points for plugin type
 entry_points:
-  # Main plugin entry point
-  activate: ./extension.ts
-  deactivate: ./extension.ts
+  activate: ./index.ts
+  deactivate: ./index.ts
 
-# Permissions required for plugin
 permissions:
   session:
     read: true
@@ -26,34 +22,8 @@ permissions:
       - session_loaded
   tools:
     allow:
-      - restore_response
+      - restore_remote
 
-# Plugin configuration schema
-config_schema:
-  type: object
-  additionalProperties: false
-  properties:
-    apiUrl:
-      type: string
-      description: Base URL for BrainSurgeon TypeScript API
-      default: http://localhost:8000
-    enableAutoPrune:
-      type: boolean
-      description: Enable automatic smart pruning on message events
-      default: true
-    autoPruneThreshold:
-      type: number
-      description: Message count threshold for auto-pruning
-      default: 3
-
-# Dependencies
 dependencies:
   node_packages:
     - @sinclair/typebox
-
-# Security configuration
-security:
-  api_key_header: X-API-Key
-  env_vars:
-    - BRAINSURGEON_API_KEYS
-    - BRAINSURGEON_READONLY
