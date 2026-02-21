@@ -1,6 +1,6 @@
 # BrainSurgeon Dev Environment Specification
 
-**Status:** Draft  
+**Status:** Draft
 **Purpose:** Isolated testing environment for BrainSurgeon extension development without risking production OpenClaw gateway.
 
 ---
@@ -33,11 +33,11 @@
 
 ## Goals
 
-1. **Complete Isolation** — Dev gateway runs on separate ports/config from production
-2. **Fast Feedback Loop** — Extension code can be hot-reloaded without full restart
-3. **Safe Testing** — Crashes in dev don't affect production agents
-4. **Realistic Data** — Can mirror production sessions for realistic testing
-5. **Easy Reset** — One command to wipe dev state and start fresh
+1. **Complete Isolation** - Dev gateway runs on separate ports/config from production
+2. **Fast Feedback Loop** - Extension code can be hot-reloaded without full restart
+3. **Safe Testing** - Crashes in dev don't affect production agents
+4. **Realistic Data** - Can mirror production sessions for realistic testing
+5. **Easy Reset** - One command to wipe dev state and start fresh
 
 ---
 
@@ -317,7 +317,7 @@ Wipes all dev data and restarts fresh. Useful when:
 
 ---
 
-## Smoke test: restore_remote (end-to-end)
+## Smoke test: purge_control (end-to-end)
 
 This verifies the **BrainSurgeon OpenClaw extension** loads correctly and can restore extracted content back into a session file.
 
@@ -347,13 +347,13 @@ curl -sS http://127.0.0.1:28789/tools/invoke \
   -H 'Authorization: Bearer dev_gateway_token_please_change' \
   -H 'Content-Type: application/json' \
   -d '{
-    "tool":"restore_remote",
+    "tool":"purge_control",
     "sessionKey":"agent:test-agent-1:main",
-    "args": {"session":"dev-restore-smoke","entry":"e1"}
+    "args": {"action":"restore","session":"dev-restore-smoke","entry":"e1"}
   }'
 ```
 
-Expected: `ok:true` and message like “Restored 1 keys… payload.answer”.
+Expected: `ok:true` and message like "Restored 1 keys… payload.answer".
 
 ### 3) Verify session file got patched
 
@@ -371,7 +371,7 @@ Expected: `payload.answer` is no longer a placeholder and `_restored`/`__restore
 - [ ] Hook errors are caught and logged gracefully
 - [ ] Smart prune preserves session structure (id/parentId)
 - [ ] Extracted files have correct permissions
-- [ ] restore_remote tool works end-to-end
+- [ ] purge_control tool works end-to-end
 - [ ] WebUI loads and displays sessions
 - [ ] Auth detection works in UI
 - [ ] Gateway restart doesn't lose extension state
