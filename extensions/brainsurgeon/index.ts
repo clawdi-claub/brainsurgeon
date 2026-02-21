@@ -29,6 +29,14 @@ type PluginApi = {
   resolvePath: (input: string) => string;
 };
 
+// Fallback logger in case api.logger is undefined
+const fallbackLogger = {
+  info: (msg: string) => console.log(`[INFO] ${msg}`),
+  warn: (msg: string) => console.warn(`[WARN] ${msg}`),
+  error: (msg: string) => console.error(`[ERROR] ${msg}`),
+  debug: (msg: string) => undefined,
+};
+
 // Plugin config (from openclaw.json plugins.entries.brainsurgeon.config)
 function getPluginConfig(api: PluginApi) {
   const pc = api.pluginConfig || {};
@@ -209,9 +217,10 @@ const plugin = {
 
   register(api: PluginApi) {
     const cfg = getPluginConfig(api);
-    const log = api.logger;
+    const log = api.logger || fallbackLogger;
 
     log.info('BrainSurgeon plugin registering...');
+    log.debug?.(`BrainSurgeon config: agentsDir=${cfg.agentsDir}, apiUrl=${cfg.apiUrl}, autoPrune=${cfg.enableAutoPrune}`);
 
     // ── restore_remote tool ───────────────────────────────────────────
     api.registerTool(
@@ -271,13 +280,10 @@ const plugin = {
           const sessionKey = ctx?.sessionKey;
           if (!agentId || !sessionKey) return;
 
-          // Extract session ID from session key (format: "agent:<agentId>:<kind>:<label>")
-          // The API needs the file-based session ID, not the key
           // Fire-and-forget prune request to BrainSurgeon API
-          await callBrainSurgeonApi(cfg.apiUrl, 'POST', '/prune', {
+          await callBrainSurgeonApi(cfg.apiUrl, 'POST', '/api/cron/prune', {
             agentId,
-            sessionKey,
-            threshold: cfg.autoPruneThreshold,
+            sessionId: sessionKey.split(':').pop() || sessionKey,
           }).catch((err: any) => {
             log.debug?.(`auto-prune request failed (non-critical): ${err.message}`);
           });
@@ -292,10 +298,13 @@ const plugin = {
     // ── before_compaction hook: forward to API ────────────────────────
     api.on('before_compaction', async (event: any, ctx: any) => {
       try {
-        await callBrainSurgeonApi(cfg.apiUrl, 'POST', '/compact', {
+        // Parse session ID from session key
+        const sessionKey = ctx?.sessionKey || '';
+        const sessionId = sessionKey.split(':').pop() || sessionKey;
+        
+        await callBrainSurgeonApi(cfg.apiUrl, 'POST', '/api/cron/compact', {
           agentId: ctx?.agentId,
-          sessionKey: ctx?.sessionKey,
-          messageCount: event?.messageCount,
+          sessionId,
           triggeredBy: 'brainsurgeon-plugin',
         }).catch(() => {}); // fire-and-forget
       } catch {}
