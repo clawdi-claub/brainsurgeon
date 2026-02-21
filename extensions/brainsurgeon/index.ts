@@ -115,7 +115,7 @@ async function restoreEntry(
       }
 
       // Load extracted data
-      const extractedPath = path.join(sessionsDir, 'extracted', sessionId, `${entryId}.jsonl`);
+      const extractedPath = path.join(sessionsDir, 'extracted', sessionId, `${entryId}.json`);
       let extractedData: any;
       try {
         await fs.access(extractedPath);
