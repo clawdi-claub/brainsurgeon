@@ -5,6 +5,7 @@
  */
 
 import type { SmartPruningConfig } from '../../config/model/config.js';
+import { buildEffectiveRules } from '../../config/model/config.js';
 import type { PruningExecutor } from '../cron/cron-service.js';
 import type { SessionRepository } from '../../session/repository/session-repository.js';
 import { ExtractionStorage } from '../extraction/extraction-storage.js';
@@ -39,8 +40,14 @@ export class SmartPruningExecutor implements PruningExecutor {
       return { sessionsScanned: 0, entriesExtracted: 0, bytesSaved: 0 };
     }
 
+    const effectiveRules = buildEffectiveRules(
+      config.trigger_rules,
+      config.keep_recent,
+      config.min_value_length,
+    );
+
     log.info({
-      trigger_types: config.trigger_types,
+      trigger_rules: effectiveRules.map(r => r.type),
       keep_recent: config.keep_recent,
       min_value_length: config.min_value_length,
     }, 'starting smart pruning run');
@@ -69,7 +76,7 @@ export class SmartPruningExecutor implements PruningExecutor {
 
           const match = detectTrigger(entry, {
             enabled: config.enabled,
-            trigger_types: config.trigger_types,
+            trigger_rules: effectiveRules,
             keep_recent: config.keep_recent,
             min_value_length: config.min_value_length,
             keep_after_restore_seconds: config.keep_after_restore_seconds,

@@ -1,12 +1,14 @@
 /**
  * Smart Pruning Trigger Logic
- * Detects entries matching configured trigger_types and position from end
- * 
- * CORE RULE: Keep the most recent `keep_recent` messages in context.
- * Extract everything older than that threshold.
+ * Detects entries matching configured trigger_rules with per-type config.
+ *
+ * CORE RULE: For each rule, keep the most recent `keep_recent` matching
+ * entries in context. Extract everything older that meets criteria.
+ *
+ * Rules are evaluated in declaration order; the first fully matching rule wins.
  */
 
-import type { TriggerType } from '../../../domains/config/model/config.js';
+import type { TriggerType, TriggerRule } from '../../../domains/config/model/config.js';
 
 /**
  * Session entry from OpenClaw JSONL
@@ -42,10 +44,12 @@ export interface SessionEntry {
  * Result of trigger detection
  */
 export interface TriggerMatch {
-  /** Entry matched a trigger type */
+  /** Entry matched a trigger rule */
   matched: boolean;
   /** Which trigger type matched */
   triggerType: TriggerType | null;
+  /** The full rule that matched (carries keep_chars, etc.) */
+  matchedRule?: TriggerRule;
   /** Entry has __id field (can be extracted) */
   hasId: boolean;
   /** Entry position from end (0 = most recent) */
@@ -59,255 +63,272 @@ export interface TriggerMatch {
 }
 
 /**
- * Configuration for trigger detection
+ * Configuration for trigger detection (rule-based)
  */
 export interface TriggerConfig {
   enabled: boolean;
-  trigger_types: TriggerType[];
+  /** Granular trigger rules with per-type config */
+  trigger_rules: TriggerRule[];
+  /** Global default: keep N most recent entries (fallback when rule omits keep_recent) */
   keep_recent: number;
+  /** Global default: minimum content length (fallback when rule omits min_length) */
   min_value_length: number;
   /** How long to protect restored entries from re-extraction (seconds) */
   keep_after_restore_seconds: number;
 }
 
+// ─── helpers ────────────────────────────────────────────────────────────
+
+/** Resolve effective keep_recent for a rule (rule-level overrides global). */
+function effectiveKeepRecent(rule: TriggerRule, globalKeepRecent: number): number {
+  return rule.keep_recent ?? globalKeepRecent;
+}
+
+/** Resolve effective min_length for a rule (rule-level overrides global). */
+function effectiveMinLength(rule: TriggerRule, globalMinLength: number): number {
+  return rule.min_length ?? globalMinLength;
+}
+
+// ─── public API ─────────────────────────────────────────────────────────
+
 /**
- * Detect if an entry matches smart prune triggers
- * 
+ * Detect if an entry matches smart prune triggers.
+ *
  * Preconditions (all must pass):
  * 1. Smart pruning enabled
- * 2. Entry has __id field (required for extraction)
+ * 2. Entry has __id or id field (required for extraction)
  * 3. Entry doesn't already have [[extracted]] placeholders
- * 4. Entry type matches one of trigger_types OR _extractable override
+ * 4. _extractable override check (force / prevent / default)
  * 5. Entry not recently restored (time-based re-extraction protection)
- * 6. Entry position >= keep_recent (old enough to extract)
- * 7. Entry has content values > min_value_length (worth extracting)
- * 
- * @param entry - Session entry from JSONL
- * @param config - Trigger configuration
- * @param positionFromEnd - Position from end of session (0 = most recent)
- * @returns TriggerMatch result
+ * 6. A trigger rule matches (type + role + generic matchers)
+ * 7. Entry position >= rule's keep_recent (old enough to extract)
+ * 8. Entry has content values >= rule's min_length (worth extracting)
  */
 export function detectTrigger(
   entry: SessionEntry,
   config: TriggerConfig,
   positionFromEnd: number,
 ): TriggerMatch {
-  // Check 1: Enabled
+  const noMatch = (skipReason: string, extras?: Partial<TriggerMatch>): TriggerMatch => ({
+    matched: false,
+    triggerType: null,
+    hasId: false,
+    positionFromEnd,
+    meetsPositionThreshold: false,
+    shouldExtract: false,
+    skipReason,
+    ...extras,
+  });
+
+  // 1 — enabled?
   if (!config.enabled) {
-    return {
-      matched: false,
-      triggerType: null,
-      hasId: false,
-      positionFromEnd,
-      meetsPositionThreshold: false,
-      shouldExtract: false,
-      skipReason: 'smart_pruning_disabled',
-    };
+    return noMatch('smart_pruning_disabled');
   }
 
-  // Check 2: Has __id or id field (OpenClaw uses 'id', we normalize to __id internally)
+  // 2 — has ID?
   const entryId = entry.__id || entry.id;
-  const hasId = !!entryId;
-  if (!hasId) {
-    return {
-      matched: false,
-      triggerType: null,
-      hasId: false,
-      positionFromEnd,
-      meetsPositionThreshold: false,
-      shouldExtract: false,
-      skipReason: 'no_entry_id',
-    };
+  if (!entryId) {
+    return noMatch('no_entry_id');
   }
 
-  // Check 3: Not already extracted
+  // 3 — already extracted?
   if (hasExtractedPlaceholders(entry)) {
-    return {
-      matched: false,
-      triggerType: null,
-      hasId: true,
-      positionFromEnd,
-      meetsPositionThreshold: false,
-      shouldExtract: false,
-      skipReason: 'already_extracted',
-    };
+    return noMatch('already_extracted', { hasId: true });
   }
 
-  // Check 4: _extractable override (can force extract or prevent extract)
-  const extractableOverride = getExtractableOverride(entry, positionFromEnd, config.keep_recent);
-  
-  if (extractableOverride === 'force') {
-    // Force extraction regardless of type, position, and value size
-    // Spec: _extractable: true → "extract even if wrong type or too short"
+  // 4 — _extractable override
+  const override = getExtractableOverride(entry, positionFromEnd, config.keep_recent);
+
+  if (override === 'force') {
     return {
       matched: true,
-      triggerType: 'assistant', // Default when forced
+      triggerType: detectEntryType(entry) ?? 'assistant',
       hasId: true,
       positionFromEnd,
       meetsPositionThreshold: true,
       shouldExtract: true,
     };
   }
-  
-  if (extractableOverride === 'prevent') {
-    return {
-      matched: false,
-      triggerType: null,
-      hasId: true,
-      positionFromEnd,
-      meetsPositionThreshold: false,
-      shouldExtract: false,
-      skipReason: '_extractable_false',
-    };
+
+  if (override === 'prevent') {
+    return noMatch('_extractable_false', { hasId: true });
   }
 
-  // Check 5: Re-extraction protection for restored entries
-  // Spec: "Protects restored value from re-extraction for keep_after_restore_seconds"
+  // 5 — re-extraction protection
   if (entry._restored) {
     const restoredAt = new Date(entry._restored).getTime();
-    const protectedUntil = restoredAt + (config.keep_after_restore_seconds * 1000);
+    const protectedUntil = restoredAt + config.keep_after_restore_seconds * 1000;
     if (Date.now() < protectedUntil) {
-      const remainingSeconds = Math.ceil((protectedUntil - Date.now()) / 1000);
+      const remaining = Math.ceil((protectedUntil - Date.now()) / 1000);
+      return noMatch(`recently_restored (${remaining}s remaining)`, { hasId: true });
+    }
+  }
+
+  // 6-8 — rule matching
+  const detectedType = detectEntryType(entry);
+  const entryRole = resolveEntryRole(entry);
+
+  for (const rule of config.trigger_rules) {
+    // 6a — type match
+    if (!matchesType(rule.type, detectedType)) continue;
+
+    // 6b — role match (default '*')
+    if (!matchesPipe(rule.role ?? '*', entryRole)) continue;
+
+    // 6c — generic key:value matchers
+    if (!matchesGenericKeys(rule, entry)) continue;
+
+    // At this point the rule structurally matches.
+    const ruleKeepRecent = effectiveKeepRecent(rule, config.keep_recent);
+    const ruleMinLength = effectiveMinLength(rule, config.min_value_length);
+
+    // 7 — keep_recent check
+    if (positionFromEnd < ruleKeepRecent) {
       return {
-        matched: false,
-        triggerType: null,
+        matched: true,
+        triggerType: rule.type,
+        matchedRule: rule,
         hasId: true,
         positionFromEnd,
         meetsPositionThreshold: false,
         shouldExtract: false,
-        skipReason: `recently_restored (${remainingSeconds}s remaining)`,
+        skipReason: 'too_recent',
       };
     }
-    // Protection expired — continue with normal extraction checks
-  }
 
-  // Check 6: Type detection
-  const detectedType = detectEntryType(entry);
-  const matched = detectedType !== null && config.trigger_types.includes(detectedType);
-  
-  if (!matched) {
-    return {
-      matched: false,
-      triggerType: null,
-      hasId: true,
-      positionFromEnd,
-      meetsPositionThreshold: false,
-      shouldExtract: false,
-      skipReason: 'type_not_matched',
-    };
-  }
+    // 8 — value size check
+    const sizes = checkValueSizes(entry, ruleMinLength);
+    if (!sizes.hasLargeValues) {
+      return {
+        matched: true,
+        triggerType: rule.type,
+        matchedRule: rule,
+        hasId: true,
+        positionFromEnd,
+        meetsPositionThreshold: true,
+        shouldExtract: false,
+        skipReason: 'values_too_small',
+      };
+    }
 
-  // Check 7: Position threshold (keep_recent)
-  // Position 0 = most recent, position keep_recent and beyond = extract
-  const meetsPositionThreshold = positionFromEnd >= config.keep_recent;
-  
-  if (!meetsPositionThreshold) {
+    // All checks pass — extract
     return {
       matched: true,
-      triggerType: detectedType,
-      hasId: true,
-      positionFromEnd,
-      meetsPositionThreshold: false,
-      shouldExtract: false,
-      skipReason: 'too_recent',
-    };
-  }
-
-  // Check 8: Value sizes (only extract if there's content worth extracting)
-  const valueSizeCheck = checkValueSizes(entry, config.min_value_length);
-  
-  if (!valueSizeCheck.hasLargeValues) {
-    return {
-      matched: true,
-      triggerType: detectedType,
+      triggerType: rule.type,
+      matchedRule: rule,
       hasId: true,
       positionFromEnd,
       meetsPositionThreshold: true,
-      shouldExtract: false,
-      skipReason: 'values_too_small',
+      shouldExtract: true,
     };
   }
 
-  // All checks pass - should extract
-  return {
-    matched: true,
-    triggerType: detectedType,
-    hasId: true,
-    positionFromEnd,
-    meetsPositionThreshold: true,
-    shouldExtract: true,
-  };
+  // No rule matched
+  return noMatch('type_not_matched', { hasId: true });
+}
+
+// ─── matching helpers ──────────────────────────────────────────────────
+
+/**
+ * Match a rule type against detected entry type.
+ * Handles wildcard '*' and pipe-delimited values (e.g., "thinking|tool_result").
+ */
+function matchesType(ruleType: string, detectedType: string | null): boolean {
+  if (ruleType === '*') return true;
+  if (!detectedType) return false;
+  return matchesPipe(ruleType, detectedType);
 }
 
 /**
- * Get _extractable override status for an entry
- * 
- * @returns 'force' | 'prevent' | 'default'
+ * Match a pipe-delimited pattern against a value.
+ * e.g., pattern "user|agent" matches "user" or "agent".
+ * Wildcard '*' matches anything.
  */
+function matchesPipe(pattern: string, value: string | null | undefined): boolean {
+  if (pattern === '*') return true;
+  if (!value) return false;
+  const options = pattern.split('|').map(s => s.trim().toLowerCase());
+  return options.includes(value.toLowerCase());
+}
+
+/**
+ * Match generic key:value matchers from a rule against an entry.
+ * Reserved keys (type, min_length, keep_chars, role, keep_recent) are skipped.
+ * All generic matchers must match (AND logic); each value supports pipe OR.
+ */
+const RESERVED_RULE_KEYS = new Set(['type', 'min_length', 'keep_chars', 'role', 'keep_recent']);
+
+function matchesGenericKeys(rule: TriggerRule, entry: SessionEntry): boolean {
+  for (const key of Object.keys(rule)) {
+    if (RESERVED_RULE_KEYS.has(key)) continue;
+
+    const ruleValue = rule[key];
+    if (ruleValue === undefined) continue;
+
+    const entryValue = entry[key];
+
+    if (typeof ruleValue === 'string') {
+      if (!matchesPipe(ruleValue, entryValue != null ? String(entryValue) : null)) {
+        return false;
+      }
+    } else if (typeof ruleValue === 'number') {
+      if (entryValue !== ruleValue) return false;
+    }
+  }
+  return true;
+}
+
+// ─── _extractable override ──────────────────────────────────────────────
+
 function getExtractableOverride(
   entry: SessionEntry,
   positionFromEnd: number,
-  keepRecent: number
+  globalKeepRecent: number,
 ): 'force' | 'prevent' | 'default' {
   const extractable = entry._extractable;
-  
-  if (extractable === true) {
-    return 'force';
-  }
-  
-  if (extractable === false) {
-    return 'prevent';
-  }
-  
+
+  if (extractable === true) return 'force';
+  if (extractable === false) return 'prevent';
+
   if (typeof extractable === 'number') {
     // Keep for this many messages (override global keep_recent)
-    if (positionFromEnd < extractable) {
-      return 'prevent'; // Still within the keep window
-    }
-    // Beyond the custom keep window - allow normal extraction
-    return 'default';
+    return positionFromEnd < extractable ? 'prevent' : 'default';
   }
-  
+
   return 'default';
 }
 
+// ─── value size checking ────────────────────────────────────────────────
+
 /**
- * Check if entry has content values larger than min_value_length
- * Returns which keys are large enough to extract
+ * Check if entry has content values larger than minValueLength.
+ * Returns which keys are large enough to extract.
  */
 export function checkValueSizes(
   entry: SessionEntry,
-  minValueLength: number
-): { 
+  minValueLength: number,
+): {
   hasLargeValues: boolean;
   largeKeys: { key: string; length: number }[];
   totalSize: number;
 } {
   const largeKeys: { key: string; length: number }[] = [];
   let totalSize = 0;
-  
+
   const keysToCheck = ['content', 'text', 'output', 'result', 'data', 'thinking', 'message'];
-  
+
   for (const key of keysToCheck) {
     const value = entry[key];
-    if (value === undefined || value === null) continue;
-    
-    let length = 0;
-    
-    if (typeof value === 'string') {
-      length = value.length;
-    } else if (typeof value === 'object') {
-      // For objects, check the stringified length
-      const str = JSON.stringify(value);
-      length = str.length;
-    }
-    
+    if (value == null) continue;
+
+    const length = typeof value === 'string' ? value.length : JSON.stringify(value).length;
+
     if (length >= minValueLength) {
       largeKeys.push({ key, length });
       totalSize += length;
     }
   }
-  
+
   // Also check nested message.content
   if (entry.message?.content && typeof entry.message.content === 'string') {
     const length = entry.message.content.length;
@@ -316,121 +337,78 @@ export function checkValueSizes(
       totalSize += length;
     }
   }
-  
-  return {
-    hasLargeValues: largeKeys.length > 0,
-    largeKeys,
-    totalSize,
-  };
+
+  return { hasLargeValues: largeKeys.length > 0, largeKeys, totalSize };
 }
 
+// ─── type detection ─────────────────────────────────────────────────────
+
 /**
- * Detect the type of a session entry
- * Priority order:
- * 1. entry.customType (for custom entries like "thinking", "model-snapshot")
- * 2. entry.type ("message", "tool_call", "tool_result")
- * 3. entry.message?.role ("assistant", "user", "system", "tool")
- * 4. entry.role (direct role field)
- * 5. Infer from content structure (fallback)
- * 
- * @param entry - Session entry
- * @returns Detected type or null if not matching any trigger type
+ * Detect the semantic type of a session entry.
+ * Priority: customType → type → message.role → role → infer from content.
  */
 function detectEntryType(entry: SessionEntry): TriggerType | null {
-  // Priority 1: customType (thinking, model-snapshot, etc.)
   if (entry.customType) {
-    const type = normalizeType(entry.customType);
-    if (type) return type;
+    const t = normalizeType(entry.customType);
+    if (t) return t;
   }
-
-  // Priority 2: entry.type
   if (entry.type) {
-    const type = mapTypeToTrigger(entry.type);
-    if (type) return type;
+    const t = mapTypeToTrigger(entry.type);
+    if (t) return t;
   }
-
-  // Priority 3: entry.message?.role
   if (entry.message?.role) {
-    const type = normalizeType(entry.message.role);
-    if (type) return type;
+    const t = normalizeType(entry.message.role);
+    if (t) return t;
   }
-
-  // Priority 4: entry.role (direct)
   if (entry.role) {
-    const type = normalizeType(entry.role);
-    if (type) return type;
+    const t = normalizeType(entry.role);
+    if (t) return t;
   }
-
-  // Priority 5: Infer from content
   return inferTypeFromContent(entry);
 }
 
-/**
- * Map entry.type to trigger type
- */
 function mapTypeToTrigger(type: string): TriggerType | null {
   switch (type.toLowerCase()) {
-    case 'tool_result':
-      return 'tool_result';
-    case 'tool_call':
-      // Tool calls typically contain assistant's tool requests
-      return 'assistant';
-    case 'message':
-      // Need to check role in message object
-      return null;
-    default:
-      return null;
+    case 'tool_result': return 'tool_result';
+    case 'tool_call': return 'assistant';
+    default: return null;
   }
 }
 
-/**
- * Normalize type string to TriggerType
- */
 function normalizeType(type: string): TriggerType | null {
-  const normalized = type.toLowerCase();
-  switch (normalized) {
-    case 'thinking':
-      return 'thinking';
-    case 'tool_result':
-      return 'tool_result';
-    case 'assistant':
-    case 'ai':
-      return 'assistant';
-    case 'user':
-    case 'human':
-      return 'user';
-    case 'system':
-      return 'system';
-    default:
-      return null;
+  switch (type.toLowerCase()) {
+    case 'thinking': return 'thinking';
+    case 'tool_result': return 'tool_result';
+    case 'assistant': case 'ai': return 'assistant';
+    case 'user': case 'human': return 'user';
+    case 'system': return 'system';
+    default: return null;
   }
 }
 
-/**
- * Infer type from entry content structure (fallback)
- */
 function inferTypeFromContent(entry: SessionEntry): TriggerType | null {
-  // Check for thinking content
-  if (entry.thinking || entry.data?.thinking) {
-    return 'thinking';
-  }
-  
-  // Check for tool result patterns
-  if (entry.tool_result || entry.result || entry.data?.result) {
-    return 'tool_result';
-  }
-
+  if (entry.thinking || entry.data?.thinking) return 'thinking';
+  if (entry.tool_result || entry.result || entry.data?.result) return 'tool_result';
   return null;
 }
 
 /**
- * Check if an entry has any [[extracted-${entryId}]] placeholders
- * Used to prevent double-extraction
- * 
- * @param entry - Entry to check
- * @returns true if already has extracted placeholders
+ * Resolve the role of an entry for rule matching.
+ * Returns lowercase role string or null.
+ */
+function resolveEntryRole(entry: SessionEntry): string | null {
+  if (entry.message?.role) return entry.message.role.toLowerCase();
+  if (entry.role) return entry.role.toLowerCase();
+  // Infer from type for common patterns
+  if (entry.customType === 'thinking') return 'agent';
+  if (entry.type === 'tool_result') return null; // tool results have no role
+  return null;
+}
+
+/**
+ * Check if an entry has any [[extracted-${entryId}]] placeholders.
+ * Used to prevent double-extraction.
  */
 export function hasExtractedPlaceholders(entry: SessionEntry): boolean {
-  const json = JSON.stringify(entry);
-  return json.includes('[[extracted-');
+  return JSON.stringify(entry).includes('[[extracted-');
 }

@@ -1,20 +1,23 @@
 import { describe, it, expect } from 'vitest';
 import { detectTrigger, type SessionEntry, type TriggerConfig } from './trigger-detector.js';
 
-describe('detectTrigger (position-based)', () => {
+describe('detectTrigger (rule-based)', () => {
   const baseConfig: TriggerConfig = {
     enabled: true,
-    trigger_types: ['thinking', 'tool_result'],
+    trigger_rules: [
+      { type: 'thinking', min_length: 500, keep_recent: 3 },
+      { type: 'tool_result', min_length: 500, keep_recent: 3 },
+    ],
     keep_recent: 3,
     min_value_length: 500,
-    keep_after_restore_seconds: 600, // 10 minutes default
+    keep_after_restore_seconds: 600,
   };
 
   it('returns no match when disabled', () => {
     const entry: SessionEntry = {
       __id: 'ent_001',
       customType: 'thinking',
-      thinking: 'some reasoning that is long enough to be extracted because it exceeds the minimum length requirement',
+      thinking: 'a'.repeat(600),
     };
 
     const result = detectTrigger(entry, { ...baseConfig, enabled: false }, 5);
@@ -28,10 +31,9 @@ describe('detectTrigger (position-based)', () => {
     const entry: SessionEntry = {
       __id: 'ent_001',
       customType: 'thinking',
-      thinking: 'a'.repeat(600), // Exceeds min_value_length
+      thinking: 'a'.repeat(600),
     };
 
-    // Position 5 from end means it's old enough to extract (keep_recent=3)
     const result = detectTrigger(entry, baseConfig, 5);
 
     expect(result.matched).toBe(true);
@@ -39,6 +41,8 @@ describe('detectTrigger (position-based)', () => {
     expect(result.hasId).toBe(true);
     expect(result.meetsPositionThreshold).toBe(true);
     expect(result.shouldExtract).toBe(true);
+    expect(result.matchedRule).toBeDefined();
+    expect(result.matchedRule!.type).toBe('thinking');
   });
 
   it('matches tool_result entries with large content', () => {
@@ -57,7 +61,7 @@ describe('detectTrigger (position-based)', () => {
 
   it('accepts entries with id field (OpenClaw format)', () => {
     const entry: SessionEntry = {
-      id: 'ent_022',  // OpenClaw uses 'id' not '__id'
+      id: 'ent_022',
       customType: 'thinking',
       thinking: 'a'.repeat(600),
     };
@@ -104,7 +108,6 @@ describe('detectTrigger (position-based)', () => {
       thinking: 'a'.repeat(600),
     };
 
-    // Position 1 from end (too recent, within keep_recent=3)
     const result = detectTrigger(entry, baseConfig, 1);
 
     expect(result.matched).toBe(true);
@@ -120,7 +123,6 @@ describe('detectTrigger (position-based)', () => {
       thinking: 'a'.repeat(600),
     };
 
-    // Position 3 from end (equals keep_recent, should extract)
     const result = detectTrigger(entry, baseConfig, 3);
 
     expect(result.matched).toBe(true);
@@ -132,7 +134,7 @@ describe('detectTrigger (position-based)', () => {
     const entry: SessionEntry = {
       __id: 'ent_006',
       customType: 'thinking',
-      thinking: 'short', // Less than 500 chars
+      thinking: 'short',
     };
 
     const result = detectTrigger(entry, baseConfig, 5);
@@ -150,8 +152,15 @@ describe('detectTrigger (position-based)', () => {
       thinking: 'a'.repeat(600),
     };
 
-    // Even position 0 should extract when keep_recent=0
-    const result = detectTrigger(entry, { ...baseConfig, keep_recent: 0 }, 0);
+    const config: TriggerConfig = {
+      ...baseConfig,
+      trigger_rules: [
+        { type: 'thinking', min_length: 500, keep_recent: 0 },
+      ],
+      keep_recent: 0,
+    };
+
+    const result = detectTrigger(entry, config, 0);
 
     expect(result.matched).toBe(true);
     expect(result.meetsPositionThreshold).toBe(true);
@@ -168,7 +177,7 @@ describe('detectTrigger (position-based)', () => {
 
     const config: TriggerConfig = {
       ...baseConfig,
-      trigger_types: ['assistant'],
+      trigger_rules: [{ type: 'assistant', min_length: 500, keep_recent: 3 }],
     };
 
     const result = detectTrigger(entry, config, 5);
@@ -186,7 +195,7 @@ describe('detectTrigger (position-based)', () => {
 
     const config: TriggerConfig = {
       ...baseConfig,
-      trigger_types: ['system'],
+      trigger_rules: [{ type: 'system', min_length: 500, keep_recent: 3 }],
     };
 
     const result = detectTrigger(entry, config, 5);
@@ -207,7 +216,7 @@ describe('detectTrigger (position-based)', () => {
     expect(result.triggerType).toBe('thinking');
   });
 
-  it('only matches configured trigger_types', () => {
+  it('only matches configured trigger rules', () => {
     const entry: SessionEntry = {
       __id: 'ent_011',
       type: 'message',
@@ -215,7 +224,7 @@ describe('detectTrigger (position-based)', () => {
       content: 'a'.repeat(600),
     };
 
-    // user not in trigger_types
+    // No rule for 'user' type
     const result = detectTrigger(entry, baseConfig, 5);
 
     expect(result.matched).toBe(false);
@@ -227,13 +236,13 @@ describe('detectTrigger (position-based)', () => {
     it('forces extraction when _extractable: true', () => {
       const entry: SessionEntry = {
         __id: 'ent_012',
-        type: 'message', // Not in trigger_types
+        type: 'message',
         message: { role: 'user' },
         content: 'a'.repeat(600),
         _extractable: true,
       };
 
-      const result = detectTrigger(entry, baseConfig, 1); // Would be too recent
+      const result = detectTrigger(entry, baseConfig, 1);
 
       expect(result.matched).toBe(true);
       expect(result.shouldExtract).toBe(true);
@@ -244,7 +253,7 @@ describe('detectTrigger (position-based)', () => {
         __id: 'ent_012b',
         type: 'message',
         message: { role: 'user' },
-        content: 'tiny', // Way below min_value_length
+        content: 'tiny',
         _extractable: true,
       };
 
@@ -252,7 +261,6 @@ describe('detectTrigger (position-based)', () => {
 
       expect(result.matched).toBe(true);
       expect(result.shouldExtract).toBe(true);
-      // Spec: "_extractable: true → extract even if wrong type or too short"
     });
 
     it('prevents extraction when _extractable: false', () => {
@@ -275,11 +283,9 @@ describe('detectTrigger (position-based)', () => {
         __id: 'ent_014',
         customType: 'thinking',
         thinking: 'a'.repeat(600),
-        _extractable: 10, // Keep for 10 messages
+        _extractable: 10,
       };
 
-      // Position 5 would normally be extracted (keep_recent=3)
-      // But _extractable=10 means keep for 10 messages
       const result = detectTrigger(entry, baseConfig, 5);
 
       expect(result.matched).toBe(false);
@@ -295,7 +301,6 @@ describe('detectTrigger (position-based)', () => {
         _extractable: 5,
       };
 
-      // Position 10 exceeds _extractable=5, so allow normal extraction
       const result = detectTrigger(entry, baseConfig, 10);
 
       expect(result.matched).toBe(true);
@@ -309,10 +314,9 @@ describe('detectTrigger (position-based)', () => {
         __id: 'ent_030',
         customType: 'thinking',
         thinking: 'a'.repeat(600),
-        _restored: new Date(Date.now() - 5 * 60 * 1000).toISOString(), // 5 minutes ago
+        _restored: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
       };
 
-      // With keep_after_restore_seconds=600 (10 min), 5 min ago is still protected
       const result = detectTrigger(entry, baseConfig, 5);
 
       expect(result.shouldExtract).toBe(false);
@@ -325,10 +329,9 @@ describe('detectTrigger (position-based)', () => {
         __id: 'ent_031',
         customType: 'thinking',
         thinking: 'a'.repeat(600),
-        _restored: new Date(Date.now() - 15 * 60 * 1000).toISOString(), // 15 minutes ago
+        _restored: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
       };
 
-      // With keep_after_restore_seconds=600 (10 min), 15 min ago is past protection
       const result = detectTrigger(entry, baseConfig, 5);
 
       expect(result.shouldExtract).toBe(true);
@@ -339,15 +342,13 @@ describe('detectTrigger (position-based)', () => {
         __id: 'ent_032',
         customType: 'thinking',
         thinking: 'a'.repeat(600),
-        _restored: new Date(Date.now() - 20 * 1000).toISOString(), // 20 seconds ago
+        _restored: new Date(Date.now() - 20 * 1000).toISOString(),
       };
 
-      // With keep_after_restore_seconds=30 (30 sec), 20 sec ago is still protected
       const configShort: TriggerConfig = { ...baseConfig, keep_after_restore_seconds: 30 };
       const result1 = detectTrigger(entry, configShort, 5);
       expect(result1.shouldExtract).toBe(false);
 
-      // With keep_after_restore_seconds=10 (10 sec), 20 sec ago is past protection
       const configVeryShort: TriggerConfig = { ...baseConfig, keep_after_restore_seconds: 10 };
       const result2 = detectTrigger(entry, configVeryShort, 5);
       expect(result2.shouldExtract).toBe(true);
@@ -359,10 +360,9 @@ describe('detectTrigger (position-based)', () => {
         customType: 'thinking',
         thinking: 'a'.repeat(600),
         _extractable: true,
-        _restored: new Date(Date.now() - 5 * 1000).toISOString(), // 5 seconds ago
+        _restored: new Date(Date.now() - 5 * 1000).toISOString(),
       };
 
-      // _extractable: true should force extraction even if recently restored
       const result = detectTrigger(entry, baseConfig, 5);
 
       expect(result.shouldExtract).toBe(true);
@@ -374,10 +374,9 @@ describe('detectTrigger (position-based)', () => {
         customType: 'thinking',
         thinking: 'a'.repeat(600),
         _extractable: false,
-        _restored: new Date(Date.now() - 15 * 60 * 1000).toISOString(), // 15 min ago (past protection)
+        _restored: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
       };
 
-      // Both _extractable: false AND past protection time → _extractable wins
       const result = detectTrigger(entry, baseConfig, 5);
 
       expect(result.shouldExtract).toBe(false);
@@ -432,7 +431,12 @@ describe('detectTrigger (position-based)', () => {
         message: { role: 'assistant', content: 'a'.repeat(600) },
       };
 
-      const result = detectTrigger(entry, { ...baseConfig, trigger_types: ['assistant'] }, 5);
+      const config: TriggerConfig = {
+        ...baseConfig,
+        trigger_rules: [{ type: 'assistant', min_length: 500, keep_recent: 3 }],
+      };
+
+      const result = detectTrigger(entry, config, 5);
 
       expect(result.matched).toBe(true);
       expect(result.shouldExtract).toBe(true);
@@ -465,6 +469,331 @@ describe('detectTrigger (position-based)', () => {
 
       expect(result.matched).toBe(true);
       expect(result.shouldExtract).toBe(true);
+    });
+  });
+
+  describe('role-based matching', () => {
+    it('matches rule with specific role', () => {
+      const entry: SessionEntry = {
+        __id: 'ent_040',
+        type: 'message',
+        message: { role: 'assistant' },
+        content: 'a'.repeat(600),
+      };
+
+      const config: TriggerConfig = {
+        ...baseConfig,
+        trigger_rules: [
+          { type: 'assistant', role: 'assistant', min_length: 500, keep_recent: 3 },
+        ],
+      };
+
+      const result = detectTrigger(entry, config, 5);
+      expect(result.matched).toBe(true);
+      expect(result.shouldExtract).toBe(true);
+    });
+
+    it('rejects when role does not match', () => {
+      const entry: SessionEntry = {
+        __id: 'ent_041',
+        type: 'message',
+        message: { role: 'user' },
+        content: 'a'.repeat(600),
+      };
+
+      const config: TriggerConfig = {
+        ...baseConfig,
+        trigger_rules: [
+          { type: 'user', role: 'assistant', min_length: 500, keep_recent: 3 },
+        ],
+      };
+
+      const result = detectTrigger(entry, config, 5);
+      expect(result.matched).toBe(false);
+      expect(result.skipReason).toBe('type_not_matched');
+    });
+
+    it('matches pipe-delimited role (user|agent)', () => {
+      const userEntry: SessionEntry = {
+        __id: 'ent_042a',
+        type: 'message',
+        message: { role: 'user' },
+        content: 'a'.repeat(600),
+      };
+
+      const assistantEntry: SessionEntry = {
+        __id: 'ent_042b',
+        type: 'message',
+        message: { role: 'assistant' },
+        content: 'a'.repeat(600),
+      };
+
+      const systemEntry: SessionEntry = {
+        __id: 'ent_042c',
+        type: 'message',
+        message: { role: 'system' },
+        content: 'a'.repeat(600),
+      };
+
+      const config: TriggerConfig = {
+        ...baseConfig,
+        trigger_rules: [
+          { type: 'user', role: 'user|assistant', min_length: 500, keep_recent: 3 },
+          { type: 'assistant', role: 'user|assistant', min_length: 500, keep_recent: 3 },
+          { type: 'system', role: 'user|assistant', min_length: 500, keep_recent: 3 },
+        ],
+      };
+
+      expect(detectTrigger(userEntry, config, 5).shouldExtract).toBe(true);
+      expect(detectTrigger(assistantEntry, config, 5).shouldExtract).toBe(true);
+      expect(detectTrigger(systemEntry, config, 5).shouldExtract).toBe(false);
+    });
+
+    it('wildcard role matches all', () => {
+      const entry: SessionEntry = {
+        __id: 'ent_043',
+        customType: 'thinking',
+        thinking: 'a'.repeat(600),
+      };
+
+      const config: TriggerConfig = {
+        ...baseConfig,
+        trigger_rules: [
+          { type: 'thinking', role: '*', min_length: 500, keep_recent: 3 },
+        ],
+      };
+
+      const result = detectTrigger(entry, config, 5);
+      expect(result.shouldExtract).toBe(true);
+    });
+  });
+
+  describe('generic key:value matchers', () => {
+    it('matches toolName from entry', () => {
+      const entry: SessionEntry = {
+        __id: 'ent_050',
+        type: 'tool_result',
+        toolName: 'exec',
+        output: 'a'.repeat(600),
+      };
+
+      const config: TriggerConfig = {
+        ...baseConfig,
+        trigger_rules: [
+          { type: 'tool_result', toolName: 'exec|curl', min_length: 500, keep_recent: 2 },
+        ],
+      };
+
+      const result = detectTrigger(entry, config, 5);
+      expect(result.matched).toBe(true);
+      expect(result.shouldExtract).toBe(true);
+    });
+
+    it('rejects when toolName does not match pattern', () => {
+      const entry: SessionEntry = {
+        __id: 'ent_051',
+        type: 'tool_result',
+        toolName: 'ls',
+        output: 'a'.repeat(600),
+      };
+
+      const config: TriggerConfig = {
+        ...baseConfig,
+        trigger_rules: [
+          { type: 'tool_result', toolName: 'exec|curl', min_length: 500, keep_recent: 2 },
+        ],
+      };
+
+      const result = detectTrigger(entry, config, 5);
+      expect(result.matched).toBe(false);
+      expect(result.skipReason).toBe('type_not_matched');
+    });
+
+    it('all generic matchers must match (AND logic)', () => {
+      const entry: SessionEntry = {
+        __id: 'ent_052',
+        type: 'tool_result',
+        toolName: 'exec',
+        provider: 'local',
+        output: 'a'.repeat(600),
+      };
+
+      const config: TriggerConfig = {
+        ...baseConfig,
+        trigger_rules: [
+          { type: 'tool_result', toolName: 'exec', provider: 'remote', min_length: 500, keep_recent: 2 },
+        ],
+      };
+
+      const result = detectTrigger(entry, config, 5);
+      expect(result.matched).toBe(false);
+      expect(result.skipReason).toBe('type_not_matched');
+    });
+  });
+
+  describe('per-rule keep_recent', () => {
+    it('uses rule-level keep_recent instead of global', () => {
+      const entry: SessionEntry = {
+        __id: 'ent_060',
+        customType: 'thinking',
+        thinking: 'a'.repeat(600),
+      };
+
+      const config: TriggerConfig = {
+        ...baseConfig,
+        trigger_rules: [
+          { type: 'thinking', min_length: 500, keep_recent: 8 },
+        ],
+        keep_recent: 3, // global is 3 but rule says 8
+      };
+
+      // Position 5: global would allow (5 >= 3) but rule prevents (5 < 8)
+      const result = detectTrigger(entry, config, 5);
+      expect(result.shouldExtract).toBe(false);
+      expect(result.skipReason).toBe('too_recent');
+
+      // Position 10: rule allows (10 >= 8)
+      const result2 = detectTrigger(entry, config, 10);
+      expect(result2.shouldExtract).toBe(true);
+    });
+
+    it('falls back to global keep_recent when rule omits it', () => {
+      const entry: SessionEntry = {
+        __id: 'ent_061',
+        customType: 'thinking',
+        thinking: 'a'.repeat(600),
+      };
+
+      const config: TriggerConfig = {
+        ...baseConfig,
+        trigger_rules: [
+          { type: 'thinking', min_length: 500 }, // no keep_recent
+        ],
+        keep_recent: 3,
+      };
+
+      // Position 2: below global keep_recent
+      const result1 = detectTrigger(entry, config, 2);
+      expect(result1.shouldExtract).toBe(false);
+      expect(result1.skipReason).toBe('too_recent');
+
+      // Position 4: above global keep_recent
+      const result2 = detectTrigger(entry, config, 4);
+      expect(result2.shouldExtract).toBe(true);
+    });
+  });
+
+  describe('per-rule min_length', () => {
+    it('uses rule-level min_length instead of global', () => {
+      const entry: SessionEntry = {
+        __id: 'ent_070',
+        customType: 'thinking',
+        thinking: 'a'.repeat(1500),
+      };
+
+      const config: TriggerConfig = {
+        ...baseConfig,
+        trigger_rules: [
+          { type: 'thinking', min_length: 2000, keep_recent: 3 },
+        ],
+        min_value_length: 500, // global is 500 but rule says 2000
+      };
+
+      // 1500 chars: global would allow but rule prevents
+      const result = detectTrigger(entry, config, 5);
+      expect(result.shouldExtract).toBe(false);
+      expect(result.skipReason).toBe('values_too_small');
+    });
+
+    it('falls back to global min_value_length when rule omits it', () => {
+      const entry: SessionEntry = {
+        __id: 'ent_071',
+        customType: 'thinking',
+        thinking: 'a'.repeat(600),
+      };
+
+      const config: TriggerConfig = {
+        ...baseConfig,
+        trigger_rules: [
+          { type: 'thinking', keep_recent: 3 }, // no min_length
+        ],
+        min_value_length: 500,
+      };
+
+      const result = detectTrigger(entry, config, 5);
+      expect(result.shouldExtract).toBe(true);
+    });
+  });
+
+  describe('rule priority (first match wins)', () => {
+    it('uses first matching rule', () => {
+      const entry: SessionEntry = {
+        __id: 'ent_080',
+        type: 'tool_result',
+        toolName: 'exec',
+        output: 'a'.repeat(800),
+      };
+
+      const config: TriggerConfig = {
+        ...baseConfig,
+        trigger_rules: [
+          // Rule 1: exec tools, keep_recent=5
+          { type: 'tool_result', toolName: 'exec', min_length: 500, keep_recent: 5 },
+          // Rule 2: all tool_results, keep_recent=2
+          { type: 'tool_result', min_length: 500, keep_recent: 2 },
+        ],
+      };
+
+      // Position 3: first rule prevents (3 < 5), second would allow (3 >= 2)
+      // But first rule wins
+      const result = detectTrigger(entry, config, 3);
+      expect(result.shouldExtract).toBe(false);
+      expect(result.skipReason).toBe('too_recent');
+    });
+
+    it('falls through to next rule when generic matcher fails', () => {
+      const entry: SessionEntry = {
+        __id: 'ent_081',
+        type: 'tool_result',
+        toolName: 'ls',
+        output: 'a'.repeat(800),
+      };
+
+      const config: TriggerConfig = {
+        ...baseConfig,
+        trigger_rules: [
+          // Rule 1: exec only — won't match ls
+          { type: 'tool_result', toolName: 'exec', min_length: 500, keep_recent: 5 },
+          // Rule 2: all tool_results
+          { type: 'tool_result', min_length: 500, keep_recent: 2 },
+        ],
+      };
+
+      // toolName=ls doesn't match rule 1, falls to rule 2
+      const result = detectTrigger(entry, config, 3);
+      expect(result.shouldExtract).toBe(true);
+    });
+  });
+
+  describe('matchedRule in result', () => {
+    it('carries matched rule for downstream use (keep_chars)', () => {
+      const entry: SessionEntry = {
+        __id: 'ent_090',
+        customType: 'thinking',
+        thinking: 'a'.repeat(1200),
+      };
+
+      const config: TriggerConfig = {
+        ...baseConfig,
+        trigger_rules: [
+          { type: 'thinking', min_length: 1000, keep_chars: 75, keep_recent: 3 },
+        ],
+      };
+
+      const result = detectTrigger(entry, config, 5);
+      expect(result.shouldExtract).toBe(true);
+      expect(result.matchedRule).toBeDefined();
+      expect(result.matchedRule!.keep_chars).toBe(75);
     });
   });
 });

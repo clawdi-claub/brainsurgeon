@@ -113,7 +113,11 @@ describe('Extraction E2E', () => {
 
   const defaultConfig: SmartPruningConfig = {
     enabled: true,
-    trigger_types: ['thinking', 'tool_result'],
+    trigger_types: ['thinking', 'tool_result'], // Legacy
+    trigger_rules: [
+      { type: 'thinking', min_length: 500, keep_recent: 3 },
+      { type: 'tool_result', min_length: 500, keep_recent: 3 },
+    ],
     keep_recent: 3,
     min_value_length: 500,
     scan_interval_seconds: 30,
@@ -180,6 +184,9 @@ describe('Extraction E2E', () => {
 
       const result = await executor.runSmartPruning({
         ...defaultConfig,
+        trigger_rules: [
+          { type: 'thinking' }, // No keep_recent → uses global
+        ],
         keep_recent: 0,
       });
 
@@ -227,9 +234,12 @@ describe('Extraction E2E', () => {
 
       sessionRepo.addSession(agentId, sessionId, entries);
 
-      // With min_value_length=50, the 100-char entry qualifies
+      // With min_value_length=50 and rules that don't override it, the 100-char entry qualifies
       const result = await executor.runSmartPruning({
         ...defaultConfig,
+        trigger_rules: [
+          { type: 'thinking', keep_recent: 3 }, // No min_length → uses global
+        ],
         min_value_length: 50,
       });
 
