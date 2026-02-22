@@ -3,9 +3,10 @@ import type {
   SmartPruningConfig, 
   ConfigResponse, 
   ConfigUpdateRequest,
-  TriggerType 
+  TriggerType,
+  TriggerRule
 } from '../model/config.js';
-import { VALID_TRIGGER_TYPES } from '../model/config.js';
+import { VALID_TRIGGER_TYPES, migrateTriggerTypesToRules, buildEffectiveRules } from '../model/config.js';
 import { parseDuration, isValidDuration } from '../../../shared/utils/duration-parser.js';
 import { createLogger } from '../../../shared/logging/logger.js';
 
@@ -34,6 +35,18 @@ export class BrainSurgeonConfigService implements ConfigService {
     
     // Load current config
     const current = await this.repository.load();
+    
+    // Migrate trigger_types to trigger_rules if needed
+    if (update.trigger_types !== undefined && update.trigger_rules === undefined) {
+      log.info({ trigger_types: update.trigger_types }, 'migrating trigger_types to trigger_rules');
+      update.trigger_rules = migrateTriggerTypesToRules(
+        update.trigger_types,
+        update.keep_recent ?? current.keep_recent,
+        update.min_value_length ?? current.min_value_length
+      );
+      // Clear trigger_types after migration
+      update.trigger_types = undefined;
+    }
     
     // Apply updates
     const updated: SmartPruningConfig = {
@@ -78,6 +91,11 @@ export class BrainSurgeonConfigService implements ConfigService {
           `Valid values: ${VALID_TRIGGER_TYPES.join(', ')}`
         );
       }
+    }
+    
+    // Validate trigger_rules (new granular config)
+    if (update.trigger_rules !== undefined) {
+      this.validateTriggerRules(update.trigger_rules);
     }
     
     // Validate keep_recent
@@ -165,6 +183,69 @@ export class BrainSurgeonConfigService implements ConfigService {
   }
 
   /**
+   * Validate trigger rules array
+   */
+  private validateTriggerRules(rules: TriggerRule[]): void {
+    if (!Array.isArray(rules)) {
+      throw new ValidationError('trigger_rules must be an array');
+    }
+
+    for (let i = 0; i < rules.length; i++) {
+      const rule = rules[i];
+      
+      // Required: type
+      if (!rule.type || typeof rule.type !== 'string') {
+        throw new ValidationError(`trigger_rules[${i}]: type is required and must be a string`);
+      }
+
+      // Optional: min_length
+      if (rule.min_length !== undefined) {
+        if (typeof rule.min_length !== 'number' || rule.min_length < 0 || rule.min_length > 100000) {
+          throw new ValidationError(
+            `trigger_rules[${i}].min_length must be a number between 0 and 100000`
+          );
+        }
+      }
+
+      // Optional: keep_chars
+      if (rule.keep_chars !== undefined) {
+        if (typeof rule.keep_chars !== 'number' || rule.keep_chars < 0 || rule.keep_chars > 10000) {
+          throw new ValidationError(
+            `trigger_rules[${i}].keep_chars must be a number between 0 and 10000`
+          );
+        }
+      }
+
+      // Optional: role
+      if (rule.role !== undefined && typeof rule.role !== 'string') {
+        throw new ValidationError(`trigger_rules[${i}].role must be a string`);
+      }
+
+      // Optional: keep_recent
+      if (rule.keep_recent !== undefined) {
+        if (typeof rule.keep_recent !== 'number' || rule.keep_recent < 0 || rule.keep_recent > 100) {
+          throw new ValidationError(
+            `trigger_rules[${i}].keep_recent must be a number between 0 and 100`
+          );
+        }
+      }
+
+      // Validate generic matchers (string or number values only)
+      const reservedKeys = ['type', 'min_length', 'keep_chars', 'role', 'keep_recent'];
+      for (const key of Object.keys(rule)) {
+        if (reservedKeys.includes(key)) continue;
+        
+        const value = rule[key];
+        if (typeof value !== 'string' && typeof value !== 'number') {
+          throw new ValidationError(
+            `trigger_rules[${i}].${key} must be a string or number (generic matcher)`
+          );
+        }
+      }
+    }
+  }
+
+  /**
    * Basic cron expression validation
    * Supports standard 5-part cron: "* * * * *"
    */
@@ -192,7 +273,8 @@ export class BrainSurgeonConfigService implements ConfigService {
   private toResponse(config: SmartPruningConfig): ConfigResponse {
     return {
       enabled: config.enabled,
-      trigger_types: config.trigger_types,
+      trigger_rules: config.trigger_rules,
+      trigger_types: config.trigger_types, // Include for backward compatibility
       keep_recent: config.keep_recent,
       min_value_length: config.min_value_length,
       scan_interval_seconds: config.scan_interval_seconds,
