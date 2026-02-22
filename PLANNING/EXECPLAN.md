@@ -17,9 +17,10 @@ Currently, the old `restore_remote` tool is deployed but broken. The new `purge_
 - [x] (2026-02-20) Extraction storage, trash integration, and lock system working
 - [x] (2026-02-20) SKILL.md documents purge_control tool with three actions
 - [x] (2026-02-21) Extension audited — 8 critical mismatches identified
-- [ ] Fix extension to implement purge_control tool (not restore_remote)
-- [ ] Fix file extension mismatch (.jsonl → .json)
-- [ ] Fix API endpoint resolution (sessionKey → sessionId)
+- [x] (2026-02-22) Fixed extension to implement purge_control tool (not restore_remote)
+- [x] (2026-02-22) Fixed file extension mismatch (.jsonl → .json)
+- [x] (2026-02-22) Fixed API endpoint resolution (sessionKey → sessionId)
+- [x] (2026-02-22) Fixed config service tests (all 164 tests passing)
 - [ ] Deploy extension and verify it loads without crashes
 - [ ] End-to-end test: extract → restore cycle via purge_control
 

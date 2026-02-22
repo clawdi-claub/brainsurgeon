@@ -198,11 +198,19 @@ export class BrainSurgeonConfigService implements ConfigService {
         throw new ValidationError(`trigger_rules[${i}]: type is required and must be a string`);
       }
 
+      // Validate type is valid (or wildcard '*')
+      if (rule.type !== '*' && !VALID_TRIGGER_TYPES.includes(rule.type as TriggerType)) {
+        throw new ValidationError(
+          `trigger_rules[${i}]: invalid trigger type '${rule.type}'. ` +
+          `Valid values: ${VALID_TRIGGER_TYPES.join(', ')}, or '*' for wildcard`
+        );
+      }
+
       // Optional: min_length
       if (rule.min_length !== undefined) {
         if (typeof rule.min_length !== 'number' || rule.min_length < 0 || rule.min_length > 100000) {
           throw new ValidationError(
-            `trigger_rules[${i}].min_length must be a number between 0 and 100000`
+            `trigger_rules[${i}].min_length must be non-negative and at most 100000`
           );
         }
       }
@@ -211,7 +219,7 @@ export class BrainSurgeonConfigService implements ConfigService {
       if (rule.keep_chars !== undefined) {
         if (typeof rule.keep_chars !== 'number' || rule.keep_chars < 0 || rule.keep_chars > 10000) {
           throw new ValidationError(
-            `trigger_rules[${i}].keep_chars must be a number between 0 and 10000`
+            `trigger_rules[${i}].keep_chars must be non-negative and at most 10000`
           );
         }
       }
@@ -225,7 +233,7 @@ export class BrainSurgeonConfigService implements ConfigService {
       if (rule.keep_recent !== undefined) {
         if (typeof rule.keep_recent !== 'number' || rule.keep_recent < 0 || rule.keep_recent > 100) {
           throw new ValidationError(
-            `trigger_rules[${i}].keep_recent must be a number between 0 and 100`
+            `trigger_rules[${i}].keep_recent must be non-negative and at most 100`
           );
         }
       }
