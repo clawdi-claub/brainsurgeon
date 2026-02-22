@@ -625,4 +625,132 @@ describe('Extraction E2E', () => {
       expect(session.entries[0].thinking).toMatch(/^\[\[extracted-.+\]\]$/);
     });
   });
+
+  // =========================================================================
+  // KB-016: keep_chars truncation
+  // =========================================================================
+
+  describe('KB-016: keep_chars truncation', () => {
+    it('preserves first N chars when keep_chars is set', async () => {
+      const longContent = 'x'.repeat(2000);
+      const entries = [
+        createThinkingEntry(longContent, { __id: 'trunc-1' }),
+        createUserMessage('hi'),
+        createUserMessage('hi'),
+        createUserMessage('hi'),
+      ];
+
+      sessionRepo.addSession(agentId, sessionId, entries);
+
+      const result = await executor.runSmartPruning({
+        ...defaultConfig,
+        trigger_rules: [
+          { type: 'thinking', min_length: 500, keep_recent: 3, keep_chars: 75 },
+        ],
+      });
+
+      expect(result.entriesExtracted).toBe(1);
+
+      const session = await sessionRepo.load(agentId, sessionId);
+      const placeholder = session.entries[0].thinking as string;
+
+      // Should start with 75 x's
+      expect(placeholder.startsWith('x'.repeat(75))).toBe(true);
+      // Should have ellipsis
+      expect(placeholder.includes('... ')).toBe(true);
+      // Should have extraction marker
+      expect(placeholder).toMatch(/\[\[extracted-.+\]\]$/);
+
+      // Total length should be ~75 + 3 (ellipsis) + 1 (space) + placeholder len
+      expect(placeholder.length).toBeLessThan(200);
+    });
+
+    it('restore returns full content (not truncated)', async () => {
+      const originalContent = 'z'.repeat(1500);
+      const entries = [
+        createThinkingEntry(originalContent, { __id: 'trunc-restore' }),
+        createUserMessage('hi'),
+        createUserMessage('hi'),
+        createUserMessage('hi'),
+      ];
+
+      sessionRepo.addSession(agentId, sessionId, entries);
+
+      // Extract with keep_chars
+      await executor.runSmartPruning({
+        ...defaultConfig,
+        trigger_rules: [
+          { type: 'thinking', min_length: 500, keep_recent: 3, keep_chars: 50 },
+        ],
+      });
+
+      let session = await sessionRepo.load(agentId, sessionId);
+      expect(session.entries[0].thinking.startsWith('z'.repeat(50))).toBe(true);
+
+      // Restore should bring back full content
+      await restoreService.restoreEntry({
+        agentId,
+        sessionId,
+        entryId: 'trunc-restore',
+      });
+
+      session = await sessionRepo.load(agentId, sessionId);
+      expect(session.entries[0].thinking).toBe(originalContent);
+    });
+
+    it('keep_chars=0 disables truncation (full placeholder only)', async () => {
+      const longContent = 'y'.repeat(2000);
+      const entries = [
+        createThinkingEntry(longContent, { __id: 'no-trunc' }),
+        createUserMessage('hi'),
+        createUserMessage('hi'),
+        createUserMessage('hi'),
+      ];
+
+      sessionRepo.addSession(agentId, sessionId, entries);
+
+      await executor.runSmartPruning({
+        ...defaultConfig,
+        trigger_rules: [
+          { type: 'thinking', min_length: 500, keep_recent: 3, keep_chars: 0 },
+        ],
+      });
+
+      const session = await sessionRepo.load(agentId, sessionId);
+      const placeholder = session.entries[0].thinking as string;
+
+      // Should be just [[extracted-...]], no prefix chars
+      expect(placeholder).toMatch(/^\[\[extracted-.+\]\]$/);
+    });
+
+    it('per-entry config can have different keep_chars', async () => {
+      const thinking = 'a'.repeat(1000);
+      const output = 'b'.repeat(1000);
+      const entries = [
+        createThinkingEntry(thinking, { __id: 'think-keep-50' }),
+        createToolResultEntry(output, { __id: 'tool-keep-100' }),
+        createUserMessage('hi'),
+        createUserMessage('hi'),
+        createUserMessage('hi'),
+      ];
+
+      sessionRepo.addSession(agentId, sessionId, entries);
+
+      await executor.runSmartPruning({
+        ...defaultConfig,
+        trigger_rules: [
+          { type: 'thinking', min_length: 500, keep_chars: 50, keep_recent: 3 },
+          { type: 'tool_result', min_length: 500, keep_chars: 100, keep_recent: 3 },
+        ],
+      });
+
+      const session = await sessionRepo.load(agentId, sessionId);
+
+      // Thinking should have 50 chars preserved
+      expect(session.entries[0].thinking.startsWith('a'.repeat(50))).toBe(true);
+
+      // Tool result should have 100 chars preserved
+      expect(session.entries[1].output.startsWith('b'.repeat(100))).toBe(true);
+    });
+  });
 });

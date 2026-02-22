@@ -84,8 +84,9 @@ export class SmartPruningExecutor implements PruningExecutor {
 
           if (!match.shouldExtract || !match.triggerType) continue;
 
-          // Extract keys
-          const result = extractEntryKeys(entry, match.triggerType);
+          // Extract keys with keep_chars from matched rule
+          const keepChars = match.matchedRule?.keep_chars ?? 0;
+          const result = extractEntryKeys(entry, match.triggerType, keepChars);
           if (!result.success || result.extractedKeys.length === 0) continue;
 
           // Store extracted data

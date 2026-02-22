@@ -27,7 +27,7 @@ export interface ExtractionResult {
 
 /**
  * Keys that are never extracted (metadata, identification, and structural/linking fields)
- * These define entry identity, relationships, and control flags — extracting them corrupts sessions.
+ * These define entry identity, relationships, and control flags - extracting them corrupts sessions.
  */
 const METADATA_KEYS = [
   // Identity
@@ -56,19 +56,22 @@ const TOOL_RESULT_EXTRACT_KEYS = ['output', 'result', 'content', 'data'];
 
 /**
  * Extract keys from an entry based on its type
- * 
+ *
  * Strategy:
  * - Extract all keys except metadata (__*) and entry identification
  * - Replace extracted values with "[[extracted]]" placeholder
+ * - If keepChars > 0, prefix placeholder with first N chars: "{firstN}... [[extracted]]"
  * - Keep __id in main entry for cross-reference
- * 
+ *
  * @param entry - Original session entry
  * @param triggerType - Type that triggered extraction (determines which keys)
+ * @param keepChars - Optional: preserve first N chars in placeholder (0 = no truncation)
  * @returns ExtractionResult with modified entry and extracted data
  */
 export function extractEntryKeys(
   entry: SessionEntry,
-  triggerType: string
+  triggerType: string,
+  keepChars: number = 0
 ): ExtractionResult {
   try {
     const extractedKeys: string[] = [];
@@ -86,36 +89,47 @@ export function extractEntryKeys(
     for (const key of keysToExtract) {
       // Skip metadata keys
       if (METADATA_KEYS.includes(key)) continue;
-      
+
       // Skip if key doesn't exist
       if (!(key in entry)) continue;
 
       const value = entry[key];
-      
+
       // Skip non-serializable values (functions, etc.)
       if (typeof value === 'function') continue;
 
       // Calculate size before extracting
       const sizeBytes = Buffer.byteLength(JSON.stringify(value), 'utf8');
 
-      // Extract the value
+      // Extract the value (full content goes to extraction file)
       extractedData[key] = value;
       extractedKeys.push(key);
       sizesBytes[key] = sizeBytes;
 
+      // Determine placeholder value
+      let placeholderValue: string;
+      if (keepChars > 0 && typeof value === 'string') {
+        // Preserve first keepChars chars, add truncation marker, then placeholder
+        const truncated = value.slice(0, keepChars);
+        placeholderValue = `${truncated}... ${placeholder}`;
+      } else {
+        // Default: full placeholder only
+        placeholderValue = placeholder;
+      }
+
       // Replace with placeholder in modified entry
-      modifiedEntry[key] = placeholder;
+      modifiedEntry[key] = placeholderValue;
     }
 
     // Handle nested data structures
     if (entry.data && typeof entry.data === 'object') {
       const nestedResult = extractNestedData(
-        entry.data, 
+        entry.data,
         triggerType,
         'data',
         placeholder
       );
-      
+
       if (nestedResult.extractedKeys.length > 0) {
         extractedKeys.push(...nestedResult.extractedKeys.map(k => `data.${k}`));
         Object.assign(extractedData, nestedResult.extractedData);
@@ -177,7 +191,7 @@ function determineKeysToExtract(
     // Compaction
     'firstKeptEntryId', 'fromHook', 'tokensBefore',
   ];
-  
+
   const allKeys = Object.keys(entry).filter(k => !k.startsWith('__') && !NEVER_EXTRACT.includes(k));
 
   switch (triggerType) {
@@ -187,23 +201,23 @@ function determineKeysToExtract(
         ...THINKING_EXTRACT_KEYS,
         ...allKeys.filter(k => !THINKING_EXTRACT_KEYS.includes(k))
       ];
-    
+
     case 'tool_result':
       // Extract tool result keys
       return [
         ...TOOL_RESULT_EXTRACT_KEYS,
         ...allKeys.filter(k => !TOOL_RESULT_EXTRACT_KEYS.includes(k))
       ];
-    
+
     case 'assistant':
     case 'user':
     case 'system':
       // Extract content/message keys for role-based types
-      return allKeys.filter(k => 
+      return allKeys.filter(k =>
         ['content', 'message', 'text', 'response'].includes(k) ||
         !['role'].includes(k)
       );
-    
+
     default:
       // Default: extract all non-metadata keys
       return allKeys;
@@ -261,7 +275,7 @@ function extractNestedData(
 /**
  * Create a placeholder entry for the main session
  * Keeps __id and replaces all other content with [[extracted]]
- * 
+ *
  * @param entry - Original entry
  * @returns Placeholder entry for main session
  */
@@ -286,7 +300,7 @@ export function createPlaceholderEntry(entry: SessionEntry): SessionEntry {
 /**
  * Check if an entry has any [[extracted-${entryId}]] placeholders
  * Used to prevent double-extraction and detect extractable entries
- * 
+ *
  * @param entry - Entry to check
  * @returns true if already has extracted placeholders
  */
@@ -298,7 +312,7 @@ export function hasExtractedPlaceholders(entry: SessionEntry): boolean {
 /**
  * Extract the entry ID from an extracted placeholder value
  * Placeholder format: [[extracted-${entryId}]]
- * 
+ *
  * @param value - Placeholder string
  * @returns entry ID or null if not a valid placeholder
  */
@@ -309,7 +323,7 @@ export function extractEntryIdFromPlaceholder(value: string): string | null {
 
 /**
  * Restore extracted content back into an entry
- * 
+ *
  * @param placeholderEntry - Entry with [[extracted-${entryId}]] placeholders
  * @param extractedData - Data from extracted file
  * @returns Restored entry with actual values
@@ -324,9 +338,10 @@ export function restoreExtractedContent(
   const { __meta, ...contentData } = extractedData;
 
   // Replace [[extracted-${entryId}]] placeholders with actual values
+  // Note: uses includes() to handle truncated placeholders like "firstN... [[extracted-id]]"
   for (const key of Object.keys(restored)) {
     const value = restored[key];
-    if (typeof value === 'string' && value.startsWith('[[extracted-')) {
+    if (typeof value === 'string' && value.includes('[[extracted-')) {
       if (key in contentData) {
         restored[key] = contentData[key];
       }
@@ -359,7 +374,7 @@ export function restoreExtractedContent(
 
 /**
  * Restore content in nested data object (recursive with max depth)
- * 
+ *
  * @param placeholderData - Object with [[extracted-${entryId}]] placeholders
  * @param extractedData - Data from extracted file
  * @param depth - Current recursion depth (default: 0, max: 10)
@@ -371,7 +386,7 @@ function restoreNestedContent(
   depth: number = 0
 ): Record<string, any> {
   const MAX_DEPTH = 10;
-  
+
   if (depth > MAX_DEPTH) {
     // Return as-is if max depth reached
     return { ...placeholderData };
@@ -381,8 +396,9 @@ function restoreNestedContent(
 
   for (const key of Object.keys(placeholderData)) {
     const value = placeholderData[key];
-    
-    if (typeof value === 'string' && value.startsWith('[[extracted-')) {
+
+    // Note: uses includes() to handle truncated placeholders like "firstN... [[extracted-id]]"
+    if (typeof value === 'string' && value.includes('[[extracted-')) {
       // Replace placeholder with extracted value
       if (key in extractedData) {
         restored[key] = extractedData[key];
