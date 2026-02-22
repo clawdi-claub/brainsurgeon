@@ -330,32 +330,90 @@ export function restoreExtractedContent(
       if (key in contentData) {
         restored[key] = contentData[key];
       }
+    } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      // Recursively restore nested objects (not just 'data')
+      const nestedExtracted = contentData[key] || {};
+      restored[key] = restoreNestedContent(value, nestedExtracted, 1);
+    } else if (Array.isArray(value)) {
+      // Recursively restore arrays
+      const extractedArray = contentData[key] || [];
+      restored[key] = value.map((item: any, index: number) => {
+        if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
+          const itemExtracted = (Array.isArray(extractedArray) && extractedArray[index]) || {};
+          return restoreNestedContent(item, itemExtracted, 1);
+        }
+        // For primitives in arrays, check if it's a placeholder
+        if (typeof item === 'string' && item.startsWith('[[extracted-')) {
+          const extractedKey = extractEntryIdFromPlaceholder(item);
+          if (extractedKey && Array.isArray(extractedArray) && extractedArray[index]) {
+            return extractedArray[index];
+          }
+        }
+        return item;
+      });
     }
-  }
-
-  // Handle nested data structures
-  if (restored.data && typeof restored.data === 'object') {
-    restored.data = restoreNestedContent(restored.data, contentData.data || {});
   }
 
   return restored;
 }
 
 /**
- * Restore content in nested data object
+ * Restore content in nested data object (recursive with max depth)
+ * 
+ * @param placeholderData - Object with [[extracted-${entryId}]] placeholders
+ * @param extractedData - Data from extracted file
+ * @param depth - Current recursion depth (default: 0, max: 10)
+ * @returns Restored object with actual values
  */
 function restoreNestedContent(
   placeholderData: Record<string, any>,
-  extractedData: Record<string, any>
+  extractedData: Record<string, any>,
+  depth: number = 0
 ): Record<string, any> {
-  const restored = { ...placeholderData };
+  const MAX_DEPTH = 10;
+  
+  if (depth > MAX_DEPTH) {
+    // Return as-is if max depth reached
+    return { ...placeholderData };
+  }
 
-  for (const key of Object.keys(restored)) {
-    const value = restored[key];
+  const restored: Record<string, any> = {};
+
+  for (const key of Object.keys(placeholderData)) {
+    const value = placeholderData[key];
+    
     if (typeof value === 'string' && value.startsWith('[[extracted-')) {
+      // Replace placeholder with extracted value
       if (key in extractedData) {
         restored[key] = extractedData[key];
+      } else {
+        restored[key] = value; // Keep placeholder if no extracted value
       }
+    } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      // Recursively restore nested objects
+      const nestedExtracted = extractedData[key] || {};
+      restored[key] = restoreNestedContent(value, nestedExtracted, depth + 1);
+    } else if (Array.isArray(value)) {
+      // Handle arrays - recursively restore each element
+      const extractedArray = extractedData[key] || [];
+      restored[key] = value.map((item: any, index: number) => {
+        if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
+          // For array items, use the corresponding item from extracted array
+          const itemExtracted = (Array.isArray(extractedArray) && extractedArray[index]) || {};
+          return restoreNestedContent(item, itemExtracted, depth + 1);
+        }
+        // For primitives in arrays, check if it's a placeholder
+        if (typeof item === 'string' && item.startsWith('[[extracted-')) {
+          const extractedKey = extractEntryIdFromPlaceholder(item);
+          if (extractedKey && Array.isArray(extractedArray) && extractedArray[index]) {
+            return extractedArray[index];
+          }
+        }
+        return item;
+      });
+    } else {
+      // Primitive value - copy as-is
+      restored[key] = value;
     }
   }
 
