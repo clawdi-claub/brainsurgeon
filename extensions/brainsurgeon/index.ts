@@ -7,6 +7,22 @@ import * as path from 'node:path';
  * Provides:
  * - purge_control tool for controlling extraction (get_context, restore, set_extractable)
  * - Server-side pruning via BrainSurgeon API integration
+ *
+ * DESIGN NOTE: Cross-Agent Operations
+ * ------------------------------------
+ * The purge_control tool uses ctx.agentId (the current agent's ID) for all operations.
+ * This means each agent can only manage its own sessions via the tool.
+ *
+ * For cross-agent maintenance (e.g., a "maintenance" agent cleaning up other agents' sessions),
+ * use the BrainSurgeon API directly:
+ *   GET  /api/sessions/:agent/:id/context
+ *   PUT  /api/sessions/:agent/:id/entries/:entryId/meta
+ *   POST /api/sessions/:agent/:id/entries/:entryId/restore
+ *
+ * This design ensures:
+ * 1. Clear session ownership (agents manage their own data)
+ * 2. No permission complexity in the tool layer
+ * 3. Admin/maintenance capabilities available via API for authorized use cases
  */
 
 // Minimal types - real types come from OpenClaw at runtime
