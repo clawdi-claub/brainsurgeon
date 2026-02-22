@@ -21,7 +21,7 @@ Currently, the old `restore_remote` tool is deployed but broken. The new `purge_
 - [x] (2026-02-22) Fixed file extension mismatch (.jsonl → .json)
 - [x] (2026-02-22) Fixed API endpoint resolution (sessionKey → sessionId)
 - [x] (2026-02-22) Fixed config service tests (all 164 tests passing)
-- [ ] Deploy extension and verify it loads without crashes
+- [x] (2026-02-22) Extension deployed and loading successfully
 - [ ] End-to-end test: extract → restore cycle via purge_control
 
 ## Surprises & Discoveries
@@ -66,6 +66,10 @@ Currently, the old `restore_remote` tool is deployed but broken. The new `purge_
 - Decision: Change extension to use `http://172.25.0.2:8000` or nginx proxy, not `localhost:8000`
   Rationale: API runs in Docker container on nginx-subnet; localhost from host context is wrong
   Date/Author: 2026-02-21 / crix-claub
+
+- Decision: Fix config service tests to match actual ConfigResponse structure
+  Rationale: Tests were written expecting nested `.config` property but service returns ConfigResponse directly; fixed tests and added trigger type validation
+  Date/Author: 2026-02-22 / crix-claub
 
 ## Outcomes & Retrospective
 
